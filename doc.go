@@ -69,8 +69,8 @@ func formatFunc(t reflect.Type) string {
 	for i := 0; i < numIn; i++ {
 		argType := t.In(i)
 		// Skip Context and Logger in TS doc
-		if argType.Implements(reflect.TypeOf((*interface{ Done() <-chan struct{} })(nil)).Elem()) ||
-			argType.String() == "*log.Logger" {
+		typeName := argType.String()
+		if typeName == "context.Context" || typeName == "*log.Logger" {
 			continue
 		}
 
@@ -105,6 +105,15 @@ func formatFunc(t reflect.Type) string {
 func goTypeToTS(t reflect.Type) string {
 	if t == nil {
 		return "any"
+	}
+
+	// Handle known standard library types to avoid deep recursion and provide clear naming
+	typeName := t.String()
+	switch typeName {
+	case "time.Time", "*time.Time":
+		return "time.Time"
+	case "time.Duration", "*time.Duration":
+		return "time.Duration"
 	}
 
 	// Handle pointers

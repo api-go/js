@@ -8,6 +8,7 @@ import (
 	"reflect"
 
 	"apigo.cc/go/cast"
+	"apigo.cc/go/jsmod"
 	"github.com/dop251/goja"
 )
 
@@ -23,17 +24,16 @@ func wrapGoFunc(vm *goja.Runtime, fn any, isUnsafe bool) goja.Value {
 
 	return vm.ToValue(func(call goja.FunctionCall) goja.Value {
 		// 1. Safety Check
-		if isUnsafe {
-			safeMode := true // Default to safe mode
-			smVal := vm.Get("__safeMode__")
-			if smVal != nil && !goja.IsUndefined(smVal) {
-				if sm, ok := smVal.Export().(bool); ok {
-					safeMode = sm
-				}
+		safeMode := true // Default to safe mode
+		smVal := vm.Get("__safeMode__")
+		if smVal != nil && !goja.IsUndefined(smVal) {
+			if sm, ok := smVal.Export().(bool); ok {
+				safeMode = sm
 			}
-			if safeMode {
-				panic(vm.NewGoError(fmt.Errorf("unauthorized: unsafe operation blocked by safeMode")))
-			}
+		}
+
+		if isUnsafe && safeMode {
+			panic(vm.NewGoError(fmt.Errorf("unauthorized: unsafe operation blocked by safeMode")))
 		}
 
 		// 2. Prepare Arguments
@@ -54,6 +54,8 @@ func wrapGoFunc(vm *goja.Runtime, fn any, isUnsafe bool) goja.Value {
 						ctx = c
 					}
 				}
+				// Inject SafeMode status into context
+				ctx = context.WithValue(ctx, jsmod.SafeModeKey, safeMode)
 				goArgs[i] = reflect.ValueOf(ctx)
 				continue
 			}
