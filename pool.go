@@ -3,6 +3,7 @@ package js
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"sync/atomic"
 
@@ -38,11 +39,12 @@ func createNewRuntime() *goja.Runtime {
 	_ = vm.Set("go", goObj)
 
 	modules := jsmod.GetModules()
-	for modName, exports := range modules {
+	for modName, mod := range modules {
 		modObj := vm.NewObject()
-		for name, val := range exports {
+		for name, val := range mod.Exports {
+			isUnsafe := mod.UnsafeList[name]
 			if reflectType := fmt.Sprintf("%T", val); reflectType == "func" || (len(reflectType) > 4 && reflectType[:4] == "func") {
-				_ = modObj.Set(name, wrapGoFunc(vm, val))
+				_ = modObj.Set(name, wrapGoFunc(vm, val, isUnsafe))
 			} else {
 				_ = modObj.Set(name, vm.ToValue(val))
 			}
@@ -63,9 +65,26 @@ func Define(code string) {
 	atomic.AddInt32(&globalVersion, 1)
 }
 
+// CallOption allows configuring the JS execution environment.
+type CallOption func(vm *goja.Runtime)
+
+// WithSafeMode enables or disables safe mode for the call.
+func WithSafeMode(enabled bool) CallOption {
+	return func(vm *goja.Runtime) {
+		_ = vm.Set("__safeMode__", enabled)
+	}
+}
+
+// WithLogger injects a custom logger for the call.
+func WithLogger(logger *log.Logger) CallOption {
+	return func(vm *goja.Runtime) {
+		_ = vm.Set("__logger__", vm.ToValue(logger))
+	}
+}
+
 // Call executes a JS function from the pool.
 // It automatically synchronizes the VM to the latest version.
-func Call(ctx context.Context, funcName string, args ...any) (any, error) {
+func Call(ctx context.Context, funcName string, args []any, opts ...CallOption) (any, error) {
 	instance := pool.Get().(*vmInstance)
 	defer pool.Put(instance)
 
@@ -86,8 +105,15 @@ func Call(ctx context.Context, funcName string, args ...any) (any, error) {
 		scriptsMu.RUnlock()
 	}
 
-	// 2. Set Context
+	// 2. Set Context and default state
 	_ = vm.Set("__ctx__", vm.ToValue(ctx))
+	_ = vm.Set("__safeMode__", true) // Default is safe
+	_ = vm.Set("__logger__", goja.Undefined())
+
+	// Apply Options
+	for _, opt := range opts {
+		opt(vm)
+	}
 
 	// 3. Get and Call JS Function
 	fnVal := vm.Get(funcName)
@@ -128,7 +154,5 @@ func Call(ctx context.Context, funcName string, args ...any) (any, error) {
 func FuncList() []string {
 	scriptsMu.RLock()
 	defer scriptsMu.RUnlock()
-	// In a real implementation, we would extract function names from scripts.
-	// For now, this is a placeholder.
 	return []string{}
 }

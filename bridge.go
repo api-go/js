@@ -3,6 +3,8 @@ package js
 import (
 	"context"
 	"fmt"
+	"io"
+	"log"
 	"reflect"
 
 	"apigo.cc/go/cast"
@@ -10,8 +12,8 @@ import (
 )
 
 // wrapGoFunc converts a standard Go function into a goja.Callable.
-// It handles context injection and automatic type conversion via go/cast.
-func wrapGoFunc(vm *goja.Runtime, fn any) goja.Value {
+// It handles context/logger injection, safeMode enforcement, and automatic type conversion.
+func wrapGoFunc(vm *goja.Runtime, fn any, isUnsafe bool) goja.Value {
 	v := reflect.ValueOf(fn)
 	if v.Kind() != reflect.Func {
 		panic(fmt.Sprintf("js.bridge: expected func, got %T", fn))
@@ -20,50 +22,76 @@ func wrapGoFunc(vm *goja.Runtime, fn any) goja.Value {
 	t := v.Type()
 
 	return vm.ToValue(func(call goja.FunctionCall) goja.Value {
-		// 1. Prepare Arguments
+		// 1. Safety Check
+		if isUnsafe {
+			safeMode := true // Default to safe mode
+			smVal := vm.Get("__safeMode__")
+			if smVal != nil && !goja.IsUndefined(smVal) {
+				if sm, ok := smVal.Export().(bool); ok {
+					safeMode = sm
+				}
+			}
+			if safeMode {
+				panic(vm.NewGoError(fmt.Errorf("unauthorized: unsafe operation blocked by safeMode")))
+			}
+		}
+
+		// 2. Prepare Arguments
 		numIn := t.NumIn()
 		goArgs := make([]reflect.Value, numIn)
 		jsArgs := call.Arguments
 		jsArgIdx := 0
 
-		// Handle context.Context injection
-		startIdx := 0
-		if numIn > 0 && t.In(0).Implements(reflect.TypeOf((*context.Context)(nil)).Elem()) {
-			// Inject context from VM's current execution context if available, 
-			// otherwise use Background. (We can improve this by storing ctx in VM's data)
-			ctx := context.Background()
-			if c, ok := vm.Get("__ctx__").Export().(context.Context); ok {
-				ctx = c
-			}
-			goArgs[0] = reflect.ValueOf(ctx)
-			startIdx = 1
-		}
-
-		for i := startIdx; i < numIn; i++ {
+		for i := 0; i < numIn; i++ {
 			argType := t.In(i)
-			goArgs[i] = reflect.New(argType).Elem()
 
+			// Magic Injection: context.Context
+			if argType.Implements(reflect.TypeOf((*context.Context)(nil)).Elem()) {
+				ctx := context.Background()
+				ctxVal := vm.Get("__ctx__")
+				if ctxVal != nil && !goja.IsUndefined(ctxVal) {
+					if c, ok := ctxVal.Export().(context.Context); ok {
+						ctx = c
+					}
+				}
+				goArgs[i] = reflect.ValueOf(ctx)
+				continue
+			}
+
+			// Magic Injection: *log.Logger
+			if argType == reflect.TypeOf((*log.Logger)(nil)) {
+				var logger *log.Logger
+				logVal := vm.Get("__logger__")
+				if logVal != nil && !goja.IsUndefined(logVal) {
+					if l, ok := logVal.Export().(*log.Logger); ok {
+						logger = l
+					}
+				}
+				if logger == nil {
+					// Fallback to a discard logger if none provided to avoid nil panic in Go side
+					logger = log.New(io.Discard, "", 0)
+				}
+				goArgs[i] = reflect.ValueOf(logger)
+				continue
+			}
+
+			// Normal JS Argument with go/cast
+			goArgs[i] = reflect.New(argType).Elem()
 			if jsArgIdx < len(jsArgs) {
 				jsVal := jsArgs[jsArgIdx]
-				// Use goja's Export() to get a Go-compatible value
 				exported := jsVal.Export()
 
-				// First, try direct assignment to preserve pointer identity (Host Object fidelity)
 				expV := reflect.ValueOf(exported)
 				if expV.IsValid() && expV.Type().AssignableTo(argType) {
 					goArgs[i].Set(expV)
 				} else {
-					// Otherwise, use go/cast to convert to the target Go type (frictionless)
 					cast.Convert(goArgs[i].Addr().Interface(), exported)
 				}
 				jsArgIdx++
-			} else {
-				// If JS args are missing, cast will keep it as zero value (frictionless)
 			}
 		}
 
-		// 2. Call the Go function
-		// We use recover to catch Go panics and turn them into JS errors
+		// 3. Call the Go function
 		var results []reflect.Value
 		var recovered any
 		func() {
@@ -75,33 +103,28 @@ func wrapGoFunc(vm *goja.Runtime, fn any) goja.Value {
 			panic(vm.NewGoError(fmt.Errorf("go panic: %v", recovered)))
 		}
 
-		// 3. Process Results
+		// 4. Process Results
 		if len(results) == 0 {
 			return goja.Undefined()
 		}
 
-		// If the last return value is an error, check it
-		if len(results) > 0 {
-			last := results[len(results)-1]
-			if last.Type().Implements(reflect.TypeOf((*error)(nil)).Elem()) {
-				if !last.IsNil() {
-					err := last.Interface().(error)
-					panic(vm.NewGoError(err))
-				}
-				// If it's an error but nil, exclude it from normal results if it's the only result
-				if len(results) == 1 {
-					return goja.Undefined()
-				}
-				// Otherwise, we take results up to len-1
-				results = results[:len(results)-1]
+		// Check for error return
+		last := results[len(results)-1]
+		if last.Type().Implements(reflect.TypeOf((*error)(nil)).Elem()) {
+			if !last.IsNil() {
+				err := last.Interface().(error)
+				panic(vm.NewGoError(err))
 			}
+			if len(results) == 1 {
+				return goja.Undefined()
+			}
+			results = results[:len(results)-1]
 		}
 
 		if len(results) == 1 {
 			return vm.ToValue(results[0].Interface())
 		}
 
-		// Multiple return values (other than the handled error) are returned as a JS array
 		resSlice := make([]any, len(results))
 		for i, r := range results {
 			resSlice[i] = r.Interface()

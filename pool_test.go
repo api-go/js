@@ -9,7 +9,7 @@ func TestPoolVersioning(t *testing.T) {
 	// 1. Define initial function
 	Define(`function hello(name) { return "Hello " + name; }`)
 
-	res, err := Call(context.Background(), "hello", "World")
+	res, err := Call(context.Background(), "hello", []any{"World"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,7 +20,7 @@ func TestPoolVersioning(t *testing.T) {
 	// 2. Define new function (incremental update)
 	Define(`function add(a, b) { return a + b; }`)
 
-	res, err = Call(context.Background(), "add", 1, 2)
+	res, err = Call(context.Background(), "add", []any{1, 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func TestPoolVersioning(t *testing.T) {
 	}
 
 	// 3. Ensure old function still works
-	res, err = Call(context.Background(), "hello", "Again")
+	res, err = Call(context.Background(), "hello", []any{"Again"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestPoolConcurrent(t *testing.T) {
 		t.Parallel()
 		for i := 0; i < 10; i++ {
 			go func() {
-				_, _ = Call(context.Background(), "heavy", 1000)
+				_, _ = Call(context.Background(), "heavy", []any{1000})
 			}()
 		}
 	})

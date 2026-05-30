@@ -24,17 +24,21 @@ func Doc() string {
 
 	sb.WriteString("declare namespace go {\n")
 	for _, modName := range keys {
-		exports := modules[modName]
+		mod := modules[modName]
 		sb.WriteString(fmt.Sprintf("  namespace %s {\n", modName))
-		
-		expKeys := make([]string, 0, len(exports))
-		for k := range exports {
+
+		expKeys := make([]string, 0, len(mod.Exports))
+		for k := range mod.Exports {
 			expKeys = append(expKeys, k)
 		}
 		sort.Strings(expKeys)
 
 		for _, name := range expKeys {
-			val := exports[name]
+			val := mod.Exports[name]
+			isUnsafe := mod.UnsafeList[name]
+			if isUnsafe {
+				sb.WriteString("    /** @unsafe */\n")
+			}
 			sb.WriteString(fmt.Sprintf("    %s\n", formatExport(name, val)))
 		}
 		sb.WriteString("  }\n")
@@ -60,14 +64,18 @@ func formatExport(name string, val any) string {
 func formatFunc(t reflect.Type) string {
 	var params []string
 	numIn := t.NumIn()
-	startIdx := 0
-	// Skip context.Context in TS doc as it's injected automatically
-	if numIn > 0 && t.In(0).String() == "context.Context" {
-		startIdx = 1
-	}
+	jsArgIdx := 0
 
-	for i := startIdx; i < numIn; i++ {
-		params = append(params, fmt.Sprintf("arg%d: %s", i-startIdx, goTypeToTS(t.In(i))))
+	for i := 0; i < numIn; i++ {
+		argType := t.In(i)
+		// Skip Context and Logger in TS doc
+		if argType.Implements(reflect.TypeOf((*interface{ Done() <-chan struct{} })(nil)).Elem()) ||
+			argType.String() == "*log.Logger" {
+			continue
+		}
+
+		params = append(params, fmt.Sprintf("arg%d: %s", jsArgIdx, goTypeToTS(argType)))
+		jsArgIdx++
 	}
 
 	// Handle return values
@@ -78,7 +86,7 @@ func formatFunc(t reflect.Type) string {
 	} else {
 		// If last return is error, we only care about the first part for TS doc
 		realOut := numOut
-		if numOut > 0 && t.Out(numOut-1).String() == "error" {
+		if numOut > 0 && t.Out(numOut-1).Implements(reflect.TypeOf((*error)(nil)).Elem()) {
 			realOut--
 		}
 
@@ -98,7 +106,7 @@ func goTypeToTS(t reflect.Type) string {
 	if t == nil {
 		return "any"
 	}
-	
+
 	// Handle pointers
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
@@ -118,9 +126,6 @@ func goTypeToTS(t reflect.Type) string {
 	case reflect.Map:
 		return "Record<string, any>"
 	case reflect.Struct:
-		// For structs, we could recursively list fields, but for a concise AI doc, 
-		// "any" or the struct name is often sufficient. 
-		// Let's at least show it's an object.
 		return "{ [key: string]: any }"
 	case reflect.Interface:
 		return "any"

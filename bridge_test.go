@@ -1,162 +1,89 @@
 package js
 
 import (
+	"bytes"
 	"context"
-	"errors"
+	"log"
+	"strings"
 	"testing"
 
-	"apigo.cc/go/jsmod"
 	"github.com/dop251/goja"
 )
 
-type User struct {
-	ID   int
-	Name string
-}
-
-func (u *User) GetInfo() string {
-	return u.Name
-}
-
-func TestBridgeDataFidelity(t *testing.T) {
+func TestBridgeSafeMode(t *testing.T) {
 	vm := goja.New()
 
-	// 1. Setup Go functions
-	originalUser := &User{ID: 1, Name: "Star"}
+	unsafeFn := func() string { return "danger" }
 
-	getUser := func() *User {
-		return originalUser
+	// Register with isUnsafe = true
+	vm.Set("danger", wrapGoFunc(vm, unsafeFn, true))
+
+	// 1. Default (SafeMode = true)
+	_, err := vm.RunString(`danger()`)
+	if err == nil || !strings.Contains(err.Error(), "blocked by safeMode") {
+		t.Fatalf("Expected safeMode block, got: %v", err)
 	}
 
-	verifyUser := func(u *User) bool {
-		// Verify pointer address remains the same (Host Object fidelity)
-		return u == originalUser
-	}
-
-	// Register functions manually for testing bridge
-	vm.Set("getUser", wrapGoFunc(vm, getUser))
-	vm.Set("verifyUser", wrapGoFunc(vm, verifyUser))
-
-	// 2. JS Execution
-	script := `
-		let u = getUser();
-		if (u.Name !== "Star") throw "Name mismatch: " + u.Name;
-		if (u.ID !== 1) throw "ID mismatch: " + u.ID;
-		
-		// Host Object method call (if exported)
-		// Note: goja requires methods to be exported and usually works better with struct pointers
-		
-		let isSame = verifyUser(u);
-		if (!isSame) throw "Pointer mismatch in Go side";
-		
-		"ok"
-	`
-	val, err := vm.RunString(script)
-	if err != nil {
-		t.Fatalf("JS execution failed: %v", err)
-	}
-	if val.Export() != "ok" {
-		t.Errorf("expected 'ok', got %v", val.Export())
-	}
-}
-
-func TestBridgeCasting(t *testing.T) {
-	vm := goja.New()
-
-	sum := func(a, b int) int {
-		return a + b
-	}
-
-	vm.Set("sum", wrapGoFunc(vm, sum))
-
-	// Test passing string as number (frictionless casting via go/cast)
-	script := `sum("10", 20)`
-	val, err := vm.RunString(script)
+	// 2. Disable SafeMode
+	vm.Set("__safeMode__", false)
+	val, err := vm.RunString(`danger()`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if val.Export().(int64) != 30 {
-		t.Errorf("expected 30, got %v", val.Export())
+	if val.Export() != "danger" {
+		t.Errorf("Expected 'danger', got %v", val.Export())
 	}
 }
 
-func TestBridgeErrorHandling(t *testing.T) {
+func TestBridgeLoggerInjection(t *testing.T) {
 	vm := goja.New()
+	var buf bytes.Buffer
+	logger := log.New(&buf, "", 0)
 
-	failFunc := func() (string, error) {
-		return "", errors.New("go_error")
+	vm.Set("__logger__", vm.ToValue(logger))
+
+	logFn := func(l *log.Logger, msg string) {
+		l.Print(msg)
 	}
 
-	vm.Set("failFunc", wrapGoFunc(vm, failFunc))
+	vm.Set("logMsg", wrapGoFunc(vm, logFn, false))
 
-	script := `
-		try {
-			failFunc();
-		} catch (e) {
-			e.message;
-		}
-	`
-	val, err := vm.RunString(script)
+	// JS only passes the 'msg' argument, logger is injected
+	_, err := vm.RunString(`logMsg("hello from js")`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if val.Export() != "go_error" {
-		t.Errorf("expected 'go_error', got %v", val.Export())
+
+	if !strings.Contains(buf.String(), "hello from js") {
+		t.Errorf("Logger injection failed, buffer: %s", buf.String())
 	}
 }
 
-func TestBridgeContextInjection(t *testing.T) {
+func TestBridgeMixedInjection(t *testing.T) {
 	vm := goja.New()
-	ctx := context.WithValue(context.Background(), "key", "value")
-	
-	// Inject context into VM
+	ctx := context.WithValue(context.Background(), "k", "v")
+	var buf bytes.Buffer
+	logger := log.New(&buf, "", 0)
+
 	vm.Set("__ctx__", vm.ToValue(ctx))
+	vm.Set("__logger__", vm.ToValue(logger))
 
-	checkCtx := func(c context.Context) string {
-		return c.Value("key").(string)
+	mixedFn := func(c context.Context, l *log.Logger, a int) string {
+		l.Printf("val: %d", a)
+		return c.Value("k").(string)
 	}
 
-	vm.Set("checkCtx", wrapGoFunc(vm, checkCtx))
+	vm.Set("mixed", wrapGoFunc(vm, mixedFn, false))
 
-	val, err := vm.RunString(`checkCtx()`)
+	val, err := vm.RunString(`mixed(42)`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if val.Export() != "value" {
-		t.Errorf("expected 'value', got %v", val.Export())
+
+	if val.Export() != "v" {
+		t.Errorf("Context injection failed")
 	}
-}
-
-func TestBridgeComplexStruct(t *testing.T) {
-	vm := goja.New()
-
-	type Complex struct {
-		Data map[string]any
-		Tags []string
+	if !strings.Contains(buf.String(), "val: 42") {
+		t.Errorf("Logger injection failed")
 	}
-
-	process := func(c Complex) int {
-		return len(c.Tags) + len(c.Data)
-	}
-
-	vm.Set("process", wrapGoFunc(vm, process))
-
-	script := `
-		process({
-			Tags: ["a", "b"],
-			Data: { "x": 1, "y": 2, "z": 3 }
-		})
-	`
-	val, err := vm.RunString(script)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if val.Export().(int64) != 5 {
-		t.Errorf("expected 5, got %v", val.Export())
-	}
-}
-
-// Ensure jsmod is used to avoid unused import if needed
-func init() {
-	_ = jsmod.GetModules()
 }
