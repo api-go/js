@@ -11,10 +11,6 @@ require (
 require (
 	github.com/dlclark/regexp2 v1.11.4 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
-	github.com/google/pprof v0.0.0-20230207041349-798e818bf904 // indirect
-	golang.org/x/text v0.3.8 // indirect
+	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
+	golang.org/x/text v0.37.0 // indirect
 )
-
-replace apigo.cc/go/jsmod => ../jsmod
-
-replace apigo.cc/go/cast => ../cast
