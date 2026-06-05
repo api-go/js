@@ -3,11 +3,11 @@ package js
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"sync/atomic"
 
 	"apigo.cc/go/jsmod"
+	"apigo.cc/go/log"
 	"github.com/dop251/goja"
 )
 
@@ -16,12 +16,25 @@ type vmInstance struct {
 	version int32
 }
 
-var (
-	globalVersion int32
-	scripts       []string
-	scriptsMu     sync.RWMutex
+// Pool represents an isolated JS execution environment with its own script registry and VM pool.
+type Pool struct {
+	version int32
+	scripts []string
+	mu      sync.RWMutex
+	pool    sync.Pool
 
-	pool = sync.Pool{
+	// Lifecycle management
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+	closed int32
+}
+
+// NewPool creates a new isolated JS execution environment.
+func NewPool() *Pool {
+	p := &Pool{}
+	p.ctx, p.cancel = context.WithCancel(context.Background())
+	p.pool = sync.Pool{
 		New: func() any {
 			return &vmInstance{
 				runtime: createNewRuntime(),
@@ -29,7 +42,11 @@ var (
 			}
 		},
 	}
-)
+	return p
+}
+
+// DefaultPool is the global singleton pool.
+var DefaultPool = NewPool()
 
 func createNewRuntime() *goja.Runtime {
 	vm := goja.New()
@@ -55,54 +72,43 @@ func createNewRuntime() *goja.Runtime {
 	return vm
 }
 
-// Define adds JS code to the global registry and increments the version.
-// All VMs in the pool will eventually synchronize to this version.
-func Define(code string) {
-	scriptsMu.Lock()
-	defer scriptsMu.Unlock()
+// Define adds JS code to the pool's registry and increments the version.
+func (p *Pool) Define(code string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
-	scripts = append(scripts, code)
-	atomic.AddInt32(&globalVersion, 1)
-}
-
-// CallOption allows configuring the JS execution environment.
-type CallOption func(vm *goja.Runtime)
-
-// WithSafeMode enables or disables safe mode for the call.
-func WithSafeMode(enabled bool) CallOption {
-	return func(vm *goja.Runtime) {
-		_ = vm.Set("__safeMode__", enabled)
-	}
-}
-
-// WithLogger injects a custom logger for the call.
-func WithLogger(logger *log.Logger) CallOption {
-	return func(vm *goja.Runtime) {
-		_ = vm.Set("__logger__", vm.ToValue(logger))
-	}
+	p.scripts = append(p.scripts, code)
+	atomic.AddInt32(&p.version, 1)
 }
 
 // Call executes a JS function from the pool.
-// It automatically synchronizes the VM to the latest version.
-func Call(ctx context.Context, funcName string, args []any, opts ...CallOption) (any, error) {
-	instance := pool.Get().(*vmInstance)
-	defer pool.Put(instance)
+func (p *Pool) Call(ctx context.Context, funcName string, args []any, opts ...CallOption) (any, error) {
+	if atomic.LoadInt32(&p.closed) == 1 {
+		return nil, fmt.Errorf("js.Pool: pool is closed")
+	}
+
+	instance := p.pool.Get().(*vmInstance)
+	defer p.pool.Put(instance)
+
+	// Tracking active calls for graceful shutdown
+	p.wg.Add(1)
+	defer p.wg.Done()
 
 	vm := instance.runtime
 
 	// 1. Synchronize scripts if version is behind
-	currentGlobalVersion := atomic.LoadInt32(&globalVersion)
-	if instance.version < currentGlobalVersion {
-		scriptsMu.RLock()
-		for i := int(instance.version); i < len(scripts); i++ {
-			_, err := vm.RunString(scripts[i])
+	currentVersion := atomic.LoadInt32(&p.version)
+	if instance.version < currentVersion {
+		p.mu.RLock()
+		for i := int(instance.version); i < len(p.scripts); i++ {
+			_, err := vm.RunString(p.scripts[i])
 			if err != nil {
-				scriptsMu.RUnlock()
+				p.mu.RUnlock()
 				return nil, fmt.Errorf("js.sync error at script %d: %w", i, err)
 			}
 		}
-		instance.version = currentGlobalVersion
-		scriptsMu.RUnlock()
+		instance.version = currentVersion
+		p.mu.RUnlock()
 	}
 
 	// 2. Set Context and default state
@@ -150,9 +156,80 @@ func Call(ctx context.Context, funcName string, args []any, opts ...CallOption) 
 	return result.Export(), nil
 }
 
+// --- Global Proxy Functions ---
+
+func Define(code string) {
+	DefaultPool.Define(code)
+}
+
+func Call(ctx context.Context, funcName string, args []any, opts ...CallOption) (any, error) {
+	return DefaultPool.Call(ctx, funcName, args, opts...)
+}
+
+// --- Starter Interface Implementation ---
+
+func (p *Pool) Start(ctx context.Context, logger *log.Logger) error {
+	// For JS engine, start is mostly for pre-warming or registry checking.
+	// We ensure the context is not canceled.
+	if p.ctx.Err() != nil {
+		p.ctx, p.cancel = context.WithCancel(context.Background())
+	}
+	atomic.StoreInt32(&p.closed, 0)
+	return nil
+}
+
+func (p *Pool) Stop(ctx context.Context) error {
+	atomic.StoreInt32(&p.closed, 1)
+	p.cancel() // Notify any long-running JS that are context-aware
+
+	// Wait for active Call() to finish or context timeout
+	done := make(chan struct{})
+	go func() {
+		p.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("js.Pool: shutdown timeout, active tasks may still be running")
+	}
+}
+
+func (p *Pool) Status() (string, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return fmt.Sprintf("scripts: %d, version: %d, closed: %v", len(p.scripts), p.version, atomic.LoadInt32(&p.closed) == 1), nil
+}
+
+// --- Helper types from original file ---
+
+// CallOption allows configuring the JS execution environment.
+type CallOption func(vm *goja.Runtime)
+
+// WithSafeMode enables or disables safe mode for the call.
+func WithSafeMode(enabled bool) CallOption {
+	return func(vm *goja.Runtime) {
+		_ = vm.Set("__safeMode__", enabled)
+	}
+}
+
+// WithLogger injects a custom logger for the call.
+func WithLogger(logger *log.Logger) CallOption {
+	return func(vm *goja.Runtime) {
+		_ = vm.Set("__logger__", vm.ToValue(logger))
+	}
+}
+
 // FuncList returns the list of all defined JS function names.
-func FuncList() []string {
-	scriptsMu.RLock()
-	defer scriptsMu.RUnlock()
+func (p *Pool) FuncList() []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	// Reflection to list functions in the latest script set could be added here
 	return []string{}
+}
+
+func FuncList() []string {
+	return DefaultPool.FuncList()
 }
