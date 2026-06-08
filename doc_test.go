@@ -14,7 +14,7 @@ func TestDocGeneration(t *testing.T) {
 		"query": func(ctx context.Context, sql string, args []any) ([]map[string]any, error) {
 			return nil, nil
 		},
-		"version": "1.0.0",
+		"version":          "1.0.0",
 		"__exportInternal": func() *struct{ Name string } { return nil },
 	})
 

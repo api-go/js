@@ -8,7 +8,9 @@ A lightweight, frictionless, and AI-friendly JavaScript engine for Go applicatio
 - **Frictionless Bridging**: Automatic type conversion using `go/cast`.
 - **Host Object Fidelity**: Go pointers and structs are preserved when passed back and forth between Go and JS.
 - **Context Injection**: Automatic `context.Context` propagation from `js.Call`.
-- **Versioned Pool**: Thread-safe VM pool with incremental code synchronization.
+- **Versioned Pool**: Thread-safe VM pool with incremental code synchronization and version checking (`CheckVersion`).
+- **Function Discovery**: List all defined functions via `FuncList()`.
+- **Context Interruption**: Safe execution with `context.Context` cancellation support.
 - **AI-Ready**: Generates TypeScript definitions (`.d.ts`) for AI to understand available capabilities.
 
 ## Usage
@@ -27,21 +29,26 @@ func init() {
 }
 ```
 
-### 2. Execute JS
+### 2. Execute JS with Version Checking
 
 ```go
 import "apigo.cc/go/js"
 
 func main() {
-    js.Define(`
-        function myTask(name) {
-            let data = go.db.query("SELECT * FROM users WHERE name = ?", [name]);
-            return data;
-        }
-    `)
+    // Check if script needs update (e.g., from file mtime)
+    if !js.CheckVersion("myTask.js", mtime) {
+        js.Define(code, "myTask.js", mtime)
+    }
 
     res, err := js.Call(ctx, "myTask", "star")
 }
+```
+
+### 3. Discover Functions
+
+```go
+funcs := js.FuncList()
+// ["myTask", ...]
 ```
 
 ### 3. Generate AI Context

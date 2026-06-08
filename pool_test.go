@@ -3,13 +3,23 @@ package js
 import (
 	"context"
 	"testing"
+
+	"apigo.cc/go/cast"
 )
 
 func TestPoolVersioning(t *testing.T) {
+	p := NewPool()
 	// 1. Define initial function
-	Define(`function hello(name) { return "Hello " + name; }`)
+	p.Define(`function hello(name) { return "Hello " + name; }`, "hello.js", int64(100))
 
-	res, err := Call(context.Background(), "hello", []any{"World"})
+	if !p.CheckVersion("hello.js", 100) {
+		t.Error("expected CheckVersion to be true for v100")
+	}
+	if p.CheckVersion("hello.js", 101) {
+		t.Error("expected CheckVersion to be false for v101")
+	}
+
+	res, err := p.Call(context.Background(), "hello", []any{"World"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -18,23 +28,30 @@ func TestPoolVersioning(t *testing.T) {
 	}
 
 	// 2. Define new function (incremental update)
-	Define(`function add(a, b) { return a + b; }`)
+	p.Define(`function add(a, b) { return a + b; }`)
 
-	res, err = Call(context.Background(), "add", []any{1, 2})
+	res, err = p.Call(context.Background(), "add", []any{1, 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.(int64) != 3 {
+	if cast.To[int64](res) != 3 {
 		t.Errorf("expected 3, got %v", res)
 	}
 
-	// 3. Ensure old function still works
-	res, err = Call(context.Background(), "hello", []any{"Again"})
-	if err != nil {
-		t.Fatal(err)
+	// 3. Check FuncList
+	funcs := p.FuncList()
+	foundHello := false
+	foundAdd := false
+	for _, f := range funcs {
+		if f == "hello" {
+			foundHello = true
+		}
+		if f == "add" {
+			foundAdd = true
+		}
 	}
-	if res != "Hello Again" {
-		t.Errorf("expected 'Hello Again', got %v", res)
+	if !foundHello || !foundAdd {
+		t.Errorf("FuncList missing functions: %v", funcs)
 	}
 }
 

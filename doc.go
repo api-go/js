@@ -59,9 +59,9 @@ func Doc() string {
 		for _, name := range expKeys {
 			isHidden := strings.HasPrefix(name, "__export")
 			val := mod.Exports[name]
-			
+
 			memberDef := formatExport(name, val, ctx, false)
-			
+
 			if !isHidden {
 				isUnsafe := mod.UnsafeList[name]
 				if isUnsafe {
@@ -255,7 +255,7 @@ func registerInterface(t reflect.Type, ctx *docCtx) string {
 
 	rawName := t.Name()
 	pkgPath := t.PkgPath()
-	
+
 	var name string
 	if strings.HasPrefix(pkgPath, "apigo.cc/go/") {
 		parts := strings.Split(pkgPath, "/")

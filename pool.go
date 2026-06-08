@@ -3,6 +3,9 @@ package js
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"regexp"
+	"sort"
 	"sync"
 	"sync/atomic"
 
@@ -11,6 +14,12 @@ import (
 	"github.com/dop251/goja"
 )
 
+type scriptEntry struct {
+	name    string
+	code    string
+	version int64
+}
+
 type vmInstance struct {
 	runtime *goja.Runtime
 	version int32
@@ -18,10 +27,12 @@ type vmInstance struct {
 
 // Pool represents an isolated JS execution environment with its own script registry and VM pool.
 type Pool struct {
-	version int32
-	scripts []string
-	mu      sync.RWMutex
-	pool    sync.Pool
+	version   int32
+	scripts   []*scriptEntry
+	scriptMap map[string]*scriptEntry
+	functions map[string]struct{}
+	mu        sync.RWMutex
+	pool      sync.Pool
 
 	// Lifecycle management
 	ctx    context.Context
@@ -32,7 +43,10 @@ type Pool struct {
 
 // NewPool creates a new isolated JS execution environment.
 func NewPool() *Pool {
-	p := &Pool{}
+	p := &Pool{
+		scriptMap: make(map[string]*scriptEntry),
+		functions: make(map[string]struct{}),
+	}
 	p.ctx, p.cancel = context.WithCancel(context.Background())
 	p.pool = sync.Pool{
 		New: func() any {
@@ -60,7 +74,7 @@ func createNewRuntime() *goja.Runtime {
 		modObj := vm.NewObject()
 		for name, val := range mod.Exports {
 			isUnsafe := mod.UnsafeList[name]
-			if reflectType := fmt.Sprintf("%T", val); reflectType == "func" || (len(reflectType) > 4 && reflectType[:4] == "func") {
+			if val != nil && reflect.TypeOf(val).Kind() == reflect.Func {
 				_ = modObj.Set(name, wrapGoFunc(vm, val, isUnsafe))
 			} else {
 				_ = modObj.Set(name, vm.ToValue(val))
@@ -72,13 +86,63 @@ func createNewRuntime() *goja.Runtime {
 	return vm
 }
 
-// Define adds JS code to the pool's registry and increments the version.
-func (p *Pool) Define(code string) {
+var funcRegex = regexp.MustCompile(`function\s+([a-zA-Z0-9_]+)\s*\(`)
+var constFuncRegex = regexp.MustCompile(`(?:const|let|var)\s+([a-zA-Z0-9_]+)\s*=\s*(?:function|\([^)]*\)\s*=>)`)
+
+// Define adds JS code to the pool's registry.
+// name and version are optional and used for CheckVersion.
+func (p *Pool) Define(code string, args ...any) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	p.scripts = append(p.scripts, code)
+	name := ""
+	version := int64(0)
+	if len(args) > 0 {
+		if s, ok := args[0].(string); ok {
+			name = s
+		}
+	}
+	if len(args) > 1 {
+		if v, ok := args[1].(int64); ok {
+			version = v
+		}
+	}
+
+	entry := &scriptEntry{name: name, code: code, version: version}
+	p.scripts = append(p.scripts, entry)
+	if name != "" {
+		p.scriptMap[name] = entry
+	}
+
+	// Extract functions for FuncList
+	matches := funcRegex.FindAllStringSubmatch(code, -1)
+	for _, m := range matches {
+		if len(m) > 1 {
+			p.functions[m[1]] = struct{}{}
+		}
+	}
+	matches = constFuncRegex.FindAllStringSubmatch(code, -1)
+	for _, m := range matches {
+		if len(m) > 1 {
+			p.functions[m[1]] = struct{}{}
+		}
+	}
+
 	atomic.AddInt32(&p.version, 1)
+}
+
+// CheckVersion returns true if a script with the given name exists and its version is >= the provided version.
+func (p *Pool) CheckVersion(name string, version int64) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if entry, ok := p.scriptMap[name]; ok {
+		return entry.version >= version
+	}
+	return false
+}
+
+func CheckVersion(name string, version int64) bool {
+	return DefaultPool.CheckVersion(name, version)
 }
 
 // Call executes a JS function from the pool.
@@ -95,13 +159,14 @@ func (p *Pool) Call(ctx context.Context, funcName string, args []any, opts ...Ca
 	defer p.wg.Done()
 
 	vm := instance.runtime
+	vm.ClearInterrupt()
 
 	// 1. Synchronize scripts if version is behind
 	currentVersion := atomic.LoadInt32(&p.version)
 	if instance.version < currentVersion {
 		p.mu.RLock()
 		for i := int(instance.version); i < len(p.scripts); i++ {
-			_, err := vm.RunString(p.scripts[i])
+			_, err := vm.RunString(p.scripts[i].code)
 			if err != nil {
 				p.mu.RUnlock()
 				return nil, fmt.Errorf("js.sync error at script %d: %w", i, err)
@@ -115,6 +180,19 @@ func (p *Pool) Call(ctx context.Context, funcName string, args []any, opts ...Ca
 	_ = vm.Set("__ctx__", vm.ToValue(ctx))
 	_ = vm.Set("__safeMode__", true) // Default is safe
 	_ = vm.Set("__logger__", goja.Undefined())
+
+	// Set up context interruption
+	if ctx != nil && ctx.Done() != nil {
+		stop := make(chan struct{})
+		defer close(stop)
+		go func() {
+			select {
+			case <-ctx.Done():
+				vm.Interrupt("context canceled")
+			case <-stop:
+			}
+		}()
+	}
 
 	// Apply Options
 	for _, opt := range opts {
@@ -158,8 +236,8 @@ func (p *Pool) Call(ctx context.Context, funcName string, args []any, opts ...Ca
 
 // --- Global Proxy Functions ---
 
-func Define(code string) {
-	DefaultPool.Define(code)
+func Define(code string, args ...any) {
+	DefaultPool.Define(code, args...)
 }
 
 func Call(ctx context.Context, funcName string, args []any, opts ...CallOption) (any, error) {
@@ -200,7 +278,7 @@ func (p *Pool) Stop(ctx context.Context) error {
 func (p *Pool) Status() (string, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return fmt.Sprintf("scripts: %d, version: %d, closed: %v", len(p.scripts), p.version, atomic.LoadInt32(&p.closed) == 1), nil
+	return fmt.Sprintf("scripts: %d, functions: %d, version: %d, closed: %v", len(p.scripts), len(p.functions), p.version, atomic.LoadInt32(&p.closed) == 1), nil
 }
 
 // --- Helper types from original file ---
@@ -226,8 +304,12 @@ func WithLogger(logger *log.Logger) CallOption {
 func (p *Pool) FuncList() []string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	// Reflection to list functions in the latest script set could be added here
-	return []string{}
+	list := make([]string, 0, len(p.functions))
+	for name := range p.functions {
+		list = append(list, name)
+	}
+	sort.Strings(list)
+	return list
 }
 
 func FuncList() []string {
