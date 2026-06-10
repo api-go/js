@@ -8,6 +8,7 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"apigo.cc/go/jsmod"
 	"apigo.cc/go/log"
@@ -81,6 +82,7 @@ func createNewRuntime() *goja.Runtime {
 			}
 		}
 		_ = goObj.Set(modName, modObj)
+		_ = vm.Set(modName, modObj) // Also inject into global
 	}
 
 	return vm
@@ -146,7 +148,9 @@ func CheckVersion(name string, version int64) bool {
 }
 
 // Call executes a JS function from the pool.
-func (p *Pool) Call(ctx context.Context, funcName string, args []any, opts ...CallOption) (any, error) {
+// It combines the pool's lifecycle context with the provided timeout.
+// injects are added to the context passed to Go functions.
+func (p *Pool) Call(funcName string, timeout time.Duration, injects map[string]any, args ...any) (any, error) {
 	if atomic.LoadInt32(&p.closed) == 1 {
 		return nil, fmt.Errorf("js.Pool: pool is closed")
 	}
@@ -176,30 +180,33 @@ func (p *Pool) Call(ctx context.Context, funcName string, args []any, opts ...Ca
 		p.mu.RUnlock()
 	}
 
-	// 2. Set Context and default state
-	_ = vm.Set("__ctx__", vm.ToValue(ctx))
-	_ = vm.Set("__safeMode__", true) // Default is safe
-	_ = vm.Set("__logger__", goja.Undefined())
+	// 2. Prepare Context
+	execCtx := jsmod.NewContext(p.ctx, injects)
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		execCtx, cancel = context.WithTimeout(execCtx, timeout)
+		defer cancel()
+	}
 
-	// Set up context interruption
-	if ctx != nil && ctx.Done() != nil {
-		stop := make(chan struct{})
-		defer close(stop)
-		go func() {
-			select {
-			case <-ctx.Done():
-				vm.Interrupt("context canceled")
-			case <-stop:
+	// 3. Set VM environment
+	_ = vm.Set("__ctx__", vm.ToValue(execCtx))
+
+	// 4. Set up interruption
+	stopInterrupter := make(chan struct{})
+	defer close(stopInterrupter)
+	go func() {
+		select {
+		case <-execCtx.Done():
+			reason := "execution timeout/canceled"
+			if p.ctx.Err() != nil {
+				reason = "application stopping"
 			}
-		}()
-	}
+			vm.Interrupt(reason)
+		case <-stopInterrupter:
+		}
+	}()
 
-	// Apply Options
-	for _, opt := range opts {
-		opt(vm)
-	}
-
-	// 3. Get and Call JS Function
+	// 5. Get and Call JS Function
 	fnVal := vm.Get(funcName)
 	if fnVal == nil || goja.IsUndefined(fnVal) {
 		return nil, fmt.Errorf("js.Call: function '%s' not found", funcName)
@@ -215,7 +222,7 @@ func (p *Pool) Call(ctx context.Context, funcName string, args []any, opts ...Ca
 		jsArgs[i] = vm.ToValue(arg)
 	}
 
-	// 4. Execution with error capture
+	// 6. Execution with error capture
 	var result goja.Value
 	var err error
 	func() {
@@ -240,15 +247,14 @@ func Define(code string, args ...any) {
 	DefaultPool.Define(code, args...)
 }
 
-func Call(ctx context.Context, funcName string, args []any, opts ...CallOption) (any, error) {
-	return DefaultPool.Call(ctx, funcName, args, opts...)
+func Call(funcName string, timeout time.Duration, injects map[string]any, args ...any) (any, error) {
+	return DefaultPool.Call(funcName, timeout, injects, args...)
 }
 
 // --- Starter Interface Implementation ---
 
 func (p *Pool) Start(ctx context.Context, logger *log.Logger) error {
-	// For JS engine, start is mostly for pre-warming or registry checking.
-	// We ensure the context is not canceled.
+	// Ensure pool context is fresh
 	if p.ctx.Err() != nil {
 		p.ctx, p.cancel = context.WithCancel(context.Background())
 	}
@@ -258,9 +264,9 @@ func (p *Pool) Start(ctx context.Context, logger *log.Logger) error {
 
 func (p *Pool) Stop(ctx context.Context) error {
 	atomic.StoreInt32(&p.closed, 1)
-	p.cancel() // Notify any long-running JS that are context-aware
+	p.cancel() // Stop all active and future calls
 
-	// Wait for active Call() to finish or context timeout
+	// Wait for active calls to finish
 	done := make(chan struct{})
 	go func() {
 		p.wg.Wait()
@@ -279,25 +285,6 @@ func (p *Pool) Status() (string, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return fmt.Sprintf("scripts: %d, functions: %d, version: %d, closed: %v", len(p.scripts), len(p.functions), p.version, atomic.LoadInt32(&p.closed) == 1), nil
-}
-
-// --- Helper types from original file ---
-
-// CallOption allows configuring the JS execution environment.
-type CallOption func(vm *goja.Runtime)
-
-// WithSafeMode enables or disables safe mode for the call.
-func WithSafeMode(enabled bool) CallOption {
-	return func(vm *goja.Runtime) {
-		_ = vm.Set("__safeMode__", enabled)
-	}
-}
-
-// WithLogger injects a custom logger for the call.
-func WithLogger(logger *log.Logger) CallOption {
-	return func(vm *goja.Runtime) {
-		_ = vm.Set("__logger__", vm.ToValue(logger))
-	}
 }
 
 // FuncList returns the list of all defined JS function names.

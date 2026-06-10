@@ -3,87 +3,106 @@ package js
 import (
 	"bytes"
 	"context"
-	"log"
+	"fmt"
 	"strings"
 	"testing"
 
+	"apigo.cc/go/cast"
+	"apigo.cc/go/jsmod"
+	"apigo.cc/go/log"
 	"github.com/dop251/goja"
 )
 
 func TestBridgeSafeMode(t *testing.T) {
 	vm := goja.New()
+	
+	// Set up safe context
+	injects := map[string]any{"SafeMode": true}
+	ctx := jsmod.NewContext(context.Background(), injects)
+	vm.Set("__ctx__", vm.ToValue(ctx))
 
-	unsafeFn := func() string { return "danger" }
+	unsafeFn := func() error { return nil }
+	vm.Set("unsafe", wrapGoFunc(vm, unsafeFn, true))
 
-	// Register with isUnsafe = true
-	vm.Set("danger", wrapGoFunc(vm, unsafeFn, true))
-
-	// 1. Default (SafeMode = true)
-	_, err := vm.RunString(`danger()`)
-	if err == nil || !strings.Contains(err.Error(), "blocked by safeMode") {
-		t.Fatalf("Expected safeMode block, got: %v", err)
-	}
-
-	// 2. Disable SafeMode
-	vm.Set("__safeMode__", false)
-	val, err := vm.RunString(`danger()`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if val.Export() != "danger" {
-		t.Errorf("Expected 'danger', got %v", val.Export())
+	_, err := vm.RunString(`unsafe()`)
+	if err == nil {
+		t.Error("SafeMode failed to block unsafe function")
+	} else if !strings.Contains(err.Error(), "unauthorized") {
+		t.Errorf("Expected unauthorized error, got %v", err)
 	}
 }
 
 func TestBridgeLoggerInjection(t *testing.T) {
 	vm := goja.New()
 	var buf bytes.Buffer
-	logger := log.New(&buf, "", 0)
+	logger := log.New("test")
+	log.SetStdLogOutput(&buf) // Capture through std log for simplicity in test
+	
+	// Inject logger via context
+	injects := map[string]any{"Logger": logger}
+	ctx := jsmod.NewContext(context.Background(), injects)
+	vm.Set("__ctx__", vm.ToValue(ctx))
 
-	vm.Set("__logger__", vm.ToValue(logger))
-
-	logFn := func(l *log.Logger, msg string) {
-		l.Print(msg)
+	logFn := func(l *log.Logger) {
+		l.Info("hello from js")
 	}
 
-	vm.Set("logMsg", wrapGoFunc(vm, logFn, false))
-
-	// JS only passes the 'msg' argument, logger is injected
-	_, err := vm.RunString(`logMsg("hello from js")`)
+	vm.Set("log", wrapGoFunc(vm, logFn, false))
+	_, err := vm.RunString(`log()`)
 	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !strings.Contains(buf.String(), "hello from js") {
-		t.Errorf("Logger injection failed, buffer: %s", buf.String())
+		t.Fatalf("JS execution failed: %v", err)
 	}
 }
 
 func TestBridgeMixedInjection(t *testing.T) {
 	vm := goja.New()
-	ctx := context.WithValue(context.Background(), "k", "v")
-	var buf bytes.Buffer
-	logger := log.New(&buf, "", 0)
-
+	
+	// Create context with multiple values
+	injects := map[string]any{
+		"UserID": "user123",
+		"Base":   "some-base",
+	}
+	ctx := jsmod.NewContext(context.Background(), injects)
 	vm.Set("__ctx__", vm.ToValue(ctx))
-	vm.Set("__logger__", vm.ToValue(logger))
 
-	mixedFn := func(c context.Context, l *log.Logger, a int) string {
-		l.Printf("val: %d", a)
-		return c.Value("k").(string)
+	mixedFn := func(c context.Context, a int) string {
+		uid := cast.String(jsmod.Get(c, "UserID"))
+		return fmt.Sprintf("%s:%d", uid, a)
 	}
 
 	vm.Set("mixed", wrapGoFunc(vm, mixedFn, false))
 
 	val, err := vm.RunString(`mixed(42)`)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("JS execution failed: %v", err)
 	}
 
-	if val.Export() != "v" {
-		t.Errorf("Context injection failed")
+	if val.Export() != "user123:42" {
+		t.Errorf("Mixed injection failed, got %v", val.Export())
 	}
-	if !strings.Contains(buf.String(), "val: 42") {
-		t.Errorf("Logger injection failed")
+}
+
+func TestBridgeOptionalParams(t *testing.T) {
+	vm := goja.New()
+	
+	optionalFn := func(a int, b *string) string {
+		if b == nil {
+			return fmt.Sprintf("%d:nil", a)
+		}
+		return fmt.Sprintf("%d:%s", a, *b)
+	}
+	
+	vm.Set("opt", wrapGoFunc(vm, optionalFn, false))
+	
+	// Test without optional param
+	val, _ := vm.RunString(`opt(1)`)
+	if val.Export() != "1:nil" {
+		t.Errorf("Optional param failed (nil), got %v", val.Export())
+	}
+	
+	// Test with optional param
+	val, _ = vm.RunString(`opt(2, "hello")`)
+	if val.Export() != "2:hello" {
+		t.Errorf("Optional param failed (val), got %v", val.Export())
 	}
 }

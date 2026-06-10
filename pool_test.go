@@ -2,7 +2,9 @@ package js
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"time"
 
 	"apigo.cc/go/cast"
 )
@@ -19,7 +21,7 @@ func TestPoolVersioning(t *testing.T) {
 		t.Error("expected CheckVersion to be false for v101")
 	}
 
-	res, err := p.Call(context.Background(), "hello", []any{"World"})
+	res, err := p.Call("hello", 0, nil, "World")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +32,7 @@ func TestPoolVersioning(t *testing.T) {
 	// 2. Define new function (incremental update)
 	p.Define(`function add(a, b) { return a + b; }`)
 
-	res, err = p.Call(context.Background(), "add", []any{1, 2})
+	res, err = p.Call("add", 0, nil, 1, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,8 +68,47 @@ func TestPoolConcurrent(t *testing.T) {
 		t.Parallel()
 		for i := 0; i < 10; i++ {
 			go func() {
-				_, _ = Call(context.Background(), "heavy", []any{1000})
+				_, _ = Call("heavy", 0, nil, 1000)
 			}()
 		}
 	})
+}
+
+func TestPoolGracefulShutdown(t *testing.T) {
+	p := NewPool()
+	p.Define(`function sleep(ms) { 
+		let start = Date.now();
+		while(Date.now() - start < ms);
+		return "done";
+	}`)
+
+	// 1. Test Timeout
+	_, err := p.Call("sleep", 100*time.Millisecond, nil, 1000)
+	if err == nil || !strings.Contains(err.Error(), "execution timeout/canceled") {
+		t.Errorf("expected timeout error, got %v", err)
+	}
+
+	// 2. Test Graceful Stop
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		p.Stop(context.Background())
+	}()
+
+	_, err = p.Call("sleep", 10*time.Second, nil, 5000)
+	if err == nil || !strings.Contains(err.Error(), "application stopping") {
+		t.Errorf("expected app stopping error, got %v", err)
+	}
+}
+
+func TestGlobalInjection(t *testing.T) {
+	p := NewPool()
+	// Test if 'cast' module is available globally without 'go.' prefix
+	p.Define(`function testGlobal() { return cast.ToJSON({a:1}); }`)
+	res, err := p.Call("testGlobal", 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res != `{"a":1}` {
+		t.Errorf("expected '{\"a\":1}', got %v", res)
+	}
 }

@@ -3,12 +3,11 @@ package js
 import (
 	"context"
 	"fmt"
-	"io"
-	"log"
 	"reflect"
 
 	"apigo.cc/go/cast"
 	"apigo.cc/go/jsmod"
+	"apigo.cc/go/log"
 	"github.com/dop251/goja"
 )
 
@@ -25,10 +24,12 @@ func wrapGoFunc(vm *goja.Runtime, fn any, isUnsafe bool) goja.Value {
 	return vm.ToValue(func(call goja.FunctionCall) goja.Value {
 		// 1. Safety Check
 		safeMode := true // Default to safe mode
-		smVal := vm.Get("__safeMode__")
-		if smVal != nil && !goja.IsUndefined(smVal) {
-			if sm, ok := smVal.Export().(bool); ok {
-				safeMode = sm
+		ctxVal := vm.Get("__ctx__")
+		var currentCtx context.Context
+		if ctxVal != nil && !goja.IsUndefined(ctxVal) {
+			if c, ok := ctxVal.Export().(context.Context); ok {
+				currentCtx = c
+				safeMode = jsmod.IsSafeMode(c)
 			}
 		}
 
@@ -47,15 +48,10 @@ func wrapGoFunc(vm *goja.Runtime, fn any, isUnsafe bool) goja.Value {
 
 			// Magic Injection: context.Context
 			if argType.Implements(reflect.TypeOf((*context.Context)(nil)).Elem()) {
-				ctx := context.Background()
-				ctxVal := vm.Get("__ctx__")
-				if ctxVal != nil && !goja.IsUndefined(ctxVal) {
-					if c, ok := ctxVal.Export().(context.Context); ok {
-						ctx = c
-					}
+				ctx := currentCtx
+				if ctx == nil {
+					ctx = context.Background()
 				}
-				// Inject SafeMode status into context
-				ctx = context.WithValue(ctx, jsmod.SafeModeKey, safeMode)
 				goArgs[i] = reflect.ValueOf(ctx)
 				continue
 			}
@@ -63,15 +59,13 @@ func wrapGoFunc(vm *goja.Runtime, fn any, isUnsafe bool) goja.Value {
 			// Magic Injection: *log.Logger
 			if argType == reflect.TypeOf((*log.Logger)(nil)) {
 				var logger *log.Logger
-				logVal := vm.Get("__logger__")
-				if logVal != nil && !goja.IsUndefined(logVal) {
-					if l, ok := logVal.Export().(*log.Logger); ok {
+				if currentCtx != nil {
+					if l, ok := jsmod.Get(currentCtx, "Logger").(*log.Logger); ok {
 						logger = l
 					}
 				}
 				if logger == nil {
-					// Fallback to a discard logger if none provided to avoid nil panic in Go side
-					logger = log.New(io.Discard, "", 0)
+					logger = log.DefaultLogger
 				}
 				goArgs[i] = reflect.ValueOf(logger)
 				continue

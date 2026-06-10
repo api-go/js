@@ -147,6 +147,8 @@ func formatFunc(t reflect.Type, ctx *docCtx, isMethod bool) string {
 		startIdx = 1 // Skip receiver
 	}
 
+	isVariadic := t.IsVariadic()
+
 	for i := startIdx; i < numIn; i++ {
 		argType := t.In(i)
 		typeName := argType.String()
@@ -154,7 +156,18 @@ func formatFunc(t reflect.Type, ctx *docCtx, isMethod bool) string {
 			continue
 		}
 
-		params = append(params, fmt.Sprintf("arg%d: %s", jsArgIdx, goTypeToTS(argType, ctx)))
+		isLast := i == numIn-1
+		paramName := fmt.Sprintf("arg%d", jsArgIdx)
+
+		if isVariadic && isLast {
+			// Variadic parameters are optional in TS
+			params = append(params, fmt.Sprintf("...%s: %s", paramName, goTypeToTS(argType.Elem(), ctx)))
+		} else if argType.Kind() == reflect.Ptr {
+			// Pointer parameters at the end are optional
+			params = append(params, fmt.Sprintf("%s?: %s", paramName, goTypeToTS(argType, ctx)))
+		} else {
+			params = append(params, fmt.Sprintf("%s: %s", paramName, goTypeToTS(argType, ctx)))
+		}
 		jsArgIdx++
 	}
 
