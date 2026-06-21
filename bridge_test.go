@@ -106,3 +106,42 @@ func TestBridgeOptionalParams(t *testing.T) {
 		t.Errorf("Optional param failed (val), got %v", val.Export())
 	}
 }
+
+func TestBridgeVariadic(t *testing.T) {
+	vm := goja.New()
+
+	variadicFn := func(cmd string, args ...any) string {
+		t.Logf("DEBUG variadicFn received: cmd=%q len(args)=%d args=%v argsType=%T", cmd, len(args), args, args)
+		for i, a := range args {
+			t.Logf("DEBUG args[%d] = %v (type=%T)", i, a, a)
+		}
+		return fmt.Sprintf("%s:%d:%v", cmd, len(args), args)
+	}
+
+	vm.Set("vfn", wrapGoFunc(vm, variadicFn, false))
+
+	// 无额外参数
+	val, _ := vm.RunString(`vfn("PING")`)
+	t.Logf("DEBUG vfn(PING) result: %v", val.Export())
+	if val.Export() != "PING:0:[]" {
+		t.Errorf("Variadic zero args failed, got %v", val.Export())
+	}
+
+	// 一个额外参数
+	val, _ = vm.RunString(`vfn("GET", "key1")`)
+	t.Logf("DEBUG vfn(GET, key1) result: %v", val.Export())
+	if val.Export() != "GET:1:[key1]" {
+		t.Errorf("Variadic one arg failed, got %v", val.Export())
+	}
+
+	// 多个额外参数
+	val, _ = vm.RunString(`vfn("HSET", "key1", "field1", "val1")`)
+	result := val.Export().(string)
+	t.Logf("DEBUG vfn(HSET, key1, field1, val1) result: %v", result)
+	if !strings.Contains(result, "HSET:3:") {
+		t.Errorf("Variadic multi args failed, got %v", result)
+	}
+	if !strings.Contains(result, "key1") || !strings.Contains(result, "field1") || !strings.Contains(result, "val1") {
+		t.Errorf("Variadic args content wrong, got %v", result)
+	}
+}

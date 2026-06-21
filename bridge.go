@@ -52,9 +52,10 @@ func wrapGoFunc(vm *goja.Runtime, fn any, isUnsafe bool) goja.Value {
 
 		// 2. Prepare Arguments
 		numIn := t.NumIn()
-		goArgs := make([]reflect.Value, numIn)
+		goArgs := make([]reflect.Value, 0, numIn+len(call.Arguments))
 		jsArgs := call.Arguments
 		jsArgIdx := 0
+		isVariadic := t.IsVariadic()
 
 		for i := 0; i < numIn; i++ {
 			argType := t.In(i)
@@ -65,7 +66,7 @@ func wrapGoFunc(vm *goja.Runtime, fn any, isUnsafe bool) goja.Value {
 				if ctx == nil {
 					ctx = context.Background()
 				}
-				goArgs[i] = reflect.ValueOf(ctx)
+				goArgs = append(goArgs, reflect.ValueOf(ctx))
 				continue
 			}
 
@@ -80,24 +81,42 @@ func wrapGoFunc(vm *goja.Runtime, fn any, isUnsafe bool) goja.Value {
 				if logger == nil {
 					logger = log.DefaultLogger
 				}
-				goArgs[i] = reflect.ValueOf(logger)
+				goArgs = append(goArgs, reflect.ValueOf(logger))
+				continue
+			}
+
+			// 可变参数：剩余 JS 参数直接追加到 goArgs，不由 Call 再包一层
+			if isVariadic && i == numIn-1 {
+				elemType := argType.Elem()
+				for jsArgIdx < len(jsArgs) {
+					exported := jsArgs[jsArgIdx].Export()
+					expV := reflect.ValueOf(exported)
+					if !expV.IsValid() || !expV.Type().AssignableTo(elemType) {
+						elem := reflect.New(elemType).Elem()
+						cast.Convert(elem.Addr().Interface(), exported)
+						expV = elem
+					}
+					goArgs = append(goArgs, expV)
+					jsArgIdx++
+				}
 				continue
 			}
 
 			// Normal JS Argument with go/cast
-			goArgs[i] = reflect.New(argType).Elem()
+			goArg := reflect.New(argType).Elem()
 			if jsArgIdx < len(jsArgs) {
 				jsVal := jsArgs[jsArgIdx]
 				exported := jsVal.Export()
 
 				expV := reflect.ValueOf(exported)
 				if expV.IsValid() && expV.Type().AssignableTo(argType) {
-					goArgs[i].Set(expV)
+					goArg.Set(expV)
 				} else {
-					cast.Convert(goArgs[i].Addr().Interface(), exported)
+					cast.Convert(goArg.Addr().Interface(), exported)
 				}
 				jsArgIdx++
 			}
+			goArgs = append(goArgs, goArg)
 		}
 
 		// 3. Call the Go function
