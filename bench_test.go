@@ -6,7 +6,7 @@ import (
 
 func BenchmarkCall(b *testing.B) {
 	p := NewPool()
-	p.Define(`function add(a, b) { return a + b; }`)
+	p.Define("add", `(a, b) => { return a + b; }`, 0)
 	args := []any{1, 2}
 
 	b.ResetTimer()
@@ -20,11 +20,10 @@ func BenchmarkCall(b *testing.B) {
 
 func BenchmarkSync(b *testing.B) {
 	p := NewPool()
-	code := `function f() { return 1; }`
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		p.Define(code)
+		p.Define("f", `() => { return 1; }`, 0)
 		_, err := p.Call("f", 0, nil)
 		if err != nil {
 			b.Fatal(err)

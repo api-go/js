@@ -3,7 +3,10 @@ package js
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"reflect"
+	"runtime"
+	"strings"
 
 	"apigo.cc/go/cast"
 	"apigo.cc/go/jsmod"
@@ -20,6 +23,16 @@ func wrapGoFunc(vm *goja.Runtime, fn any, isUnsafe bool) goja.Value {
 	}
 
 	t := v.Type()
+
+	// Capture Go function metadata for error tracing
+	goFunc := runtime.FuncForPC(v.Pointer())
+	goFuncRef := "<unknown>"
+	goFuncName := "<unknown>"
+	if goFunc != nil {
+		goFuncName = goFunc.Name()
+		file, line := goFunc.FileLine(goFunc.Entry())
+		goFuncRef = fmt.Sprintf("%s at %s:%d", goFuncName, trimGoPath(file), line)
+	}
 
 	return vm.ToValue(func(call goja.FunctionCall) goja.Value {
 		// 1. Safety Check
@@ -90,13 +103,26 @@ func wrapGoFunc(vm *goja.Runtime, fn any, isUnsafe bool) goja.Value {
 		// 3. Call the Go function
 		var results []reflect.Value
 		var recovered any
+		var panicStack string
 		func() {
-			defer func() { recovered = recover() }()
+			defer func() {
+				recovered = recover()
+				if recovered != nil {
+					// Capture full goroutine stack while panicking frame is still on it
+					buf := make([]byte, 8192)
+					n := runtime.Stack(buf, false)
+					panicStack = formatGoStack(string(buf[:n]), goFuncName)
+				}
+			}()
 			results = v.Call(goArgs)
 		}()
 
 		if recovered != nil {
-			panic(vm.NewGoError(fmt.Errorf("go panic: %v", recovered)))
+			err := &goStackError{
+				cause: fmt.Errorf("[%s] panic: %v", goFuncRef, recovered),
+				stack: panicStack,
+			}
+			panic(vm.NewGoError(err))
 		}
 
 		// 4. Process Results
@@ -109,6 +135,7 @@ func wrapGoFunc(vm *goja.Runtime, fn any, isUnsafe bool) goja.Value {
 		if last.Type().Implements(reflect.TypeOf((*error)(nil)).Elem()) {
 			if !last.IsNil() {
 				err := last.Interface().(error)
+				err = fmt.Errorf("[%s] %w", goFuncRef, err)
 				panic(vm.NewGoError(err))
 			}
 			if len(results) == 1 {
@@ -127,4 +154,92 @@ func wrapGoFunc(vm *goja.Runtime, fn any, isUnsafe bool) goja.Value {
 		}
 		return vm.ToValue(resSlice)
 	})
+}
+
+// trimGoPath shortens a Go source file path for display:
+// keeps only the last two path components (package/file.go).
+func trimGoPath(fullPath string) string {
+	dir, file := filepath.Split(fullPath)
+	if dir == "" {
+		return file
+	}
+	parent := filepath.Base(filepath.Clean(dir))
+	if parent == "." || parent == "/" {
+		return file
+	}
+	return filepath.Join(parent, file)
+}
+
+// goStackError wraps a Go error with a captured stack trace.
+// formatException detects it to append the stack without duplication.
+type goStackError struct {
+	cause error
+	stack string
+}
+
+func (e *goStackError) Error() string { return e.cause.Error() }
+func (e *goStackError) Unwrap() error { return e.cause }
+func (e *goStackError) Stack() string  { return e.stack }
+
+// formatGoStack filters a full goroutine stack trace, keeping only frames
+// relevant to the user: dropping runtime, reflect, bridge, and goja internals.
+func formatGoStack(fullStack, goFuncName string) string {
+	lines := strings.Split(fullStack, "\n")
+	var b strings.Builder
+	inHeader := true
+
+	for _, line := range lines {
+		if inHeader {
+			if strings.HasPrefix(line, "goroutine ") {
+				inHeader = false
+			}
+			continue
+		}
+		if isNoiseFrame(line) {
+			continue
+		}
+		// Highlight the user's function
+		trimmed := strings.TrimSpace(line)
+		if goFuncName != "" && strings.Contains(trimmed, goFuncName) {
+			b.WriteString("  > " + trimmed + "\n")
+		} else {
+			b.WriteString("  " + trimmed + "\n")
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func isNoiseFrame(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	// Function-name level noise
+	if strings.Contains(trimmed, "github.com/dop251/goja") {
+		return true
+	}
+	if strings.Contains(trimmed, "apigo.cc/go/js.wrapGoFunc") {
+		return true
+	}
+	if strings.Contains(trimmed, "apigo.cc/go/js.(*Pool)") {
+		return true
+	}
+	if strings.Contains(trimmed, "reflect.Value") {
+		return true
+	}
+	if strings.Contains(trimmed, "reflect.") && !strings.Contains(trimmed, "dummyGoFunc") {
+		return true
+	}
+	// File-path level noise
+	noisePaths := []string{
+		"/js/bridge.go",
+		"/js/pool.go",
+		"/reflect/",
+		"/goja@",
+		"/goja/",
+		"/src/runtime/",
+	}
+	for _, p := range noisePaths {
+		if strings.Contains(trimmed, p) {
+			return true
+		}
+	}
+	return false
 }

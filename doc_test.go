@@ -2,7 +2,6 @@ package js
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -19,8 +18,6 @@ func TestDocGeneration(t *testing.T) {
 	})
 
 	doc := Doc()
-	fmt.Println(doc)
-
 	if !strings.Contains(doc, "interface GoTime") {
 		t.Error("doc should contain GoTime interface")
 	}
