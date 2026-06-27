@@ -1,5 +1,13 @@
 # CHANGELOG - go/js
 
+## v1.5.7 (2026-06-28)
+- **低代码 TS 文档对齐**:
+  - `Doc()` 生成的模块入口改为顶层全局变量声明，如 `declare const api: Api_Module;`，不再使用 `declare const go: { ... }` 包裹。
+  - 为运行时注入的日志对象补充 `Logger` 接口，仅暴露 `Debug`、`Info`、`Warning`、`Error` 四个 JS 侧需要的方法。
+  - 统一非项目类型的不透明命名风格，默认声明改为 `GoContext`、`GoHTTPRequest`、`GoHTTPResponse`、`GoURL`，标准库结构体采用 `GoTime` 这类更稳定的命名。
+- **测试增强**:
+  - `TestDocGeneration` 新增对顶层全局模块声明、`Logger` 暴露面和 `GoTime` 命名的覆盖。
+
 ## v1.5.6 (2026-06-21)
 - **可变参数桥接修复**: `wrapGoFunc` 修复对 Go 可变参数（`...any`）的桥接处理。之前将 JS 剩余参数错误打包为单一切片元素，导致 `Call` 二次嵌套；现在改为逐个追加到 `goArgs` 尾部，由 `reflect.Call` 自动构建可变切片，确保 JS 调用 `redis.Do('HSET', a, b, c)` 正确展开。
 - **新增测试**: `TestBridgeVariadic` 覆盖可变参数 0/1/多参数场景。

@@ -58,6 +58,25 @@ dts := js.Doc()
 // Feed d.ts to LLM to provide coding context
 ```
 
+The generated declarations are optimized for low-code editors:
+- bridged modules are exposed as top-level globals such as `api`, `cast`, `db`, `service`
+- injected logger values are typed as `Logger`
+- opaque runtime handles use stable names such as `GoContext`, `GoHTTPRequest`, `GoHTTPResponse`, `GoURL`
+- exposed standard-library structs use stable names such as `GoTime`
+
+Example:
+
+```ts
+declare const service: Service_Module
+
+interface Logger {
+    Debug(message: string, ...extra: any[]): void
+    Info(message: string, ...extra: any[]): void
+    Warning(message: string, ...extra: any[]): void
+    Error(message: string, ...extra: any[]): void
+}
+```
+
 ## Internal Bridge Details
 
 The engine uses `goja`'s Host Object mechanism. When a Go struct/pointer is returned to JS, it remains a Go object. When passed back to a Go function, the original pointer is preserved, ensuring zero data loss and state consistency.

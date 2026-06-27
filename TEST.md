@@ -1,15 +1,15 @@
 # Test Report - go/js
 
 ## Performance (Benchmark)
-Date: 2026-06-21
+Date: 2026-06-28
 OS: darwin
 Arch: amd64
 CPU: Intel(R) Core(TM) i9-9980HK CPU @ 2.40GHz
 
 | Benchmark | Iterations | Time/op |
 |-----------|------------|---------|
-| BenchmarkCall | 661954 | 1566 ns/op |
-| BenchmarkSync | 51656 | 50748 ns/op |
+| BenchmarkCall | 766462 | 1331 ns/op |
+| BenchmarkSync | 31066 | 52789 ns/op |
 
 *Note: BenchmarkCall covers the hot path of executing a JS function from the pool. BenchmarkSync covers the cost of defining new code (including VM sync).*
 
@@ -31,6 +31,8 @@ CPU: Intel(R) Core(TM) i9-9980HK CPU @ 2.40GHz
 --- PASS: TestBridgeMixedInjection (0.00s)
 === RUN   TestBridgeOptionalParams
 --- PASS: TestBridgeOptionalParams (0.00s)
+=== RUN   TestBridgeVariadic
+--- PASS: TestBridgeVariadic (0.00s)
 === RUN   TestDocGeneration
 --- PASS: TestDocGeneration (0.00s)
 === RUN   TestPoolVersioning
@@ -48,7 +50,7 @@ CPU: Intel(R) Core(TM) i9-9980HK CPU @ 2.40GHz
 === RUN   TestDefineRedefine
 --- PASS: TestDefineRedefine (0.00s)
 PASS
-ok      apigo.cc/go/js  0.572s
+ok      apigo.cc/go/js  0.800s
 ```
 
 ## Features Verified
@@ -61,4 +63,7 @@ ok      apigo.cc/go/js  0.572s
 - [x] Context cancellation interruption.
 - [x] Graceful shutdown.
 - [x] TypeScript definition generation.
+- [x] Top-level global module declarations for low-code hints.
+- [x] Opaque type naming stability (`GoContext`, `GoTime`, `GoURL`).
+- [x] Runtime-injected `Logger` type hints with JS-safe methods only.
 - [x] JS VM call stack parsing & Go dynamic call stack restoration with `jsmod.MakeError`.
