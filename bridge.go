@@ -164,15 +164,56 @@ func wrapGoFunc(vm *goja.Runtime, fn any, isUnsafe bool) goja.Value {
 		}
 
 		if len(results) == 1 {
-			return vm.ToValue(results[0].Interface())
+			return toJSValue(vm, results[0].Interface())
 		}
 
 		resSlice := make([]any, len(results))
 		for i, r := range results {
-			resSlice[i] = r.Interface()
+			resSlice[i] = toJSValue(vm, r.Interface())
 		}
 		return vm.ToValue(resSlice)
 	})
+}
+
+// toJSValue exposes Go API objects through bridge-wrapped methods rather than
+// goja's direct reflection. Directly reflected methods bypass cast.Convert, so
+// nested lower-camel JavaScript objects would not be converted to Go structs.
+// Plain data structs retain goja's normal value export behavior.
+func toJSValue(vm *goja.Runtime, value any) goja.Value {
+	reflectValue := reflect.ValueOf(value)
+	if !reflectValue.IsValid() {
+		return goja.Null()
+	}
+	reflectType := reflectValue.Type()
+	structType := reflectType
+	if structType.Kind() == reflect.Pointer {
+		if reflectValue.IsNil() {
+			return goja.Null()
+		}
+		structType = structType.Elem()
+	}
+	if structType.Kind() != reflect.Struct || reflectType.NumMethod() == 0 || hasExportedField(structType) {
+		return vm.ToValue(value)
+	}
+
+	object := vm.NewObject()
+	for index := 0; index < reflectType.NumMethod(); index++ {
+		method := reflectType.Method(index)
+		boundMethod := reflectValue.Method(index)
+		if boundMethod.IsValid() {
+			_ = object.Set(method.Name, wrapGoFunc(vm, boundMethod.Interface(), false))
+		}
+	}
+	return object
+}
+
+func hasExportedField(structType reflect.Type) bool {
+	for index := 0; index < structType.NumField(); index++ {
+		if structType.Field(index).IsExported() {
+			return true
+		}
+	}
+	return false
 }
 
 // trimGoPath shortens a Go source file path for display:
@@ -198,7 +239,7 @@ type goStackError struct {
 
 func (e *goStackError) Error() string { return e.cause.Error() }
 func (e *goStackError) Unwrap() error { return e.cause }
-func (e *goStackError) Stack() string  { return e.stack }
+func (e *goStackError) Stack() string { return e.stack }
 
 // formatGoStack filters a full goroutine stack trace, keeping only frames
 // relevant to the user: dropping runtime, reflect, bridge, and goja internals.

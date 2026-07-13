@@ -13,9 +13,30 @@ import (
 	"github.com/dop251/goja"
 )
 
+type bridgeFacadeFilter struct {
+	Field    string
+	Operator string
+	Value    any
+}
+
+type bridgeFacadeRequest struct {
+	Filter []bridgeFacadeFilter
+	Limit  int
+}
+
+// bridgeFacade intentionally follows the shape used by Go APIs exposed to JS:
+// private state and exported methods.
+type bridgeFacade struct {
+	received bridgeFacadeRequest
+}
+
+func (f *bridgeFacade) Query(request bridgeFacadeRequest) {
+	f.received = request
+}
+
 func TestBridgeSafeMode(t *testing.T) {
 	vm := goja.New()
-	
+
 	// Set up safe context
 	injects := map[string]any{"SafeMode": true}
 	ctx := jsmod.NewContext(context.Background(), injects)
@@ -37,7 +58,7 @@ func TestBridgeLoggerInjection(t *testing.T) {
 	var buf bytes.Buffer
 	logger := log.New("test")
 	log.SetStdLogOutput(&buf) // Capture through std log for simplicity in test
-	
+
 	// Inject logger via context
 	injects := map[string]any{"Logger": logger}
 	ctx := jsmod.NewContext(context.Background(), injects)
@@ -56,7 +77,7 @@ func TestBridgeLoggerInjection(t *testing.T) {
 
 func TestBridgeMixedInjection(t *testing.T) {
 	vm := goja.New()
-	
+
 	// Create context with multiple values
 	injects := map[string]any{
 		"UserID": "user123",
@@ -84,22 +105,22 @@ func TestBridgeMixedInjection(t *testing.T) {
 
 func TestBridgeOptionalParams(t *testing.T) {
 	vm := goja.New()
-	
+
 	optionalFn := func(a int, b *string) string {
 		if b == nil {
 			return fmt.Sprintf("%d:nil", a)
 		}
 		return fmt.Sprintf("%d:%s", a, *b)
 	}
-	
+
 	vm.Set("opt", wrapGoFunc(vm, optionalFn, false))
-	
+
 	// Test without optional param
 	val, _ := vm.RunString(`opt(1)`)
 	if val.Export() != "1:nil" {
 		t.Errorf("Optional param failed (nil), got %v", val.Export())
 	}
-	
+
 	// Test with optional param
 	val, _ = vm.RunString(`opt(2, "hello")`)
 	if val.Export() != "2:hello" {
@@ -143,5 +164,25 @@ func TestBridgeVariadic(t *testing.T) {
 	}
 	if !strings.Contains(result, "key1") || !strings.Contains(result, "field1") || !strings.Contains(result, "val1") {
 		t.Errorf("Variadic args content wrong, got %v", result)
+	}
+}
+
+func TestBridgeMapsLowerCamelCaseForReturnedObjectMethods(t *testing.T) {
+	vm := goja.New()
+	facade := &bridgeFacade{}
+	if err := vm.Set("table", wrapGoFunc(vm, func() *bridgeFacade { return facade }, false)); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := vm.RunString(`table().Query({filter: [{field: "Name", operator: "=", value: "Admin"}], limit: 1000})`)
+	if err != nil {
+		t.Fatalf("JS execution failed: %v", err)
+	}
+	if facade.received.Limit != 1000 || len(facade.received.Filter) != 1 {
+		t.Fatalf("lower-camel request was not converted: %#v", facade.received)
+	}
+	filter := facade.received.Filter[0]
+	if filter.Field != "Name" || filter.Operator != "=" || filter.Value != "Admin" {
+		t.Errorf("unexpected converted filter: %#v", filter)
 	}
 }

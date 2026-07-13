@@ -36,11 +36,11 @@ import "apigo.cc/go/js"
 
 func main() {
     // Check if script needs update (e.g., from file mtime)
-    if !js.CheckVersion("myTask.js", mtime) {
-        js.Define(code, "myTask.js", mtime)
+    if !js.CheckVersion("myTask", mtime) {
+        js.Define("myTask", code, mtime)
     }
 
-    res, err := js.Call(ctx, "myTask", "star")
+    res, err := js.Call("myTask", time.Second, nil, "star")
 }
 ```
 
@@ -79,9 +79,18 @@ interface Logger {
 
 ## Internal Bridge Details
 
-The engine uses `goja`'s Host Object mechanism. When a Go struct/pointer is returned to JS, it remains a Go object. When passed back to a Go function, the original pointer is preserved, ensuring zero data loss and state consistency.
+The engine preserves ordinary Go data values. API facade objects returned to JavaScript expose their exported methods through the same bridge as top-level module functions, ensuring identical context injection, safe-mode checking, error conversion, and struct conversion.
 
 Types are automatically coerced:
 - JS `string` -> Go `int` (via `go/cast`)
 - JS `Object` -> Go `Struct`
 - Go `error` -> JS `Exception`
+
+Therefore both styles use normal JavaScript lower-camel fields:
+
+```js
+knowbase.Table("Account").Query({
+  filter: [{ field: "Name", operator: "=", value: "Admin" }],
+  limit: 1000
+})
+```

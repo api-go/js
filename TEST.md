@@ -33,6 +33,8 @@ CPU: Intel(R) Core(TM) i9-9980HK CPU @ 2.40GHz
 --- PASS: TestBridgeOptionalParams (0.00s)
 === RUN   TestBridgeVariadic
 --- PASS: TestBridgeVariadic (0.00s)
+=== RUN   TestBridgeMapsLowerCamelCaseForReturnedObjectMethods
+--- PASS: TestBridgeMapsLowerCamelCaseForReturnedObjectMethods (0.00s)
 === RUN   TestDocGeneration
 --- PASS: TestDocGeneration (0.00s)
 === RUN   TestPoolVersioning
@@ -55,6 +57,7 @@ ok      apigo.cc/go/js  0.800s
 
 ## Features Verified
 - [x] JS calling Go with automatic type conversion.
+- [x] Returned Go API object methods use the same lower-camel struct conversion.
 - [x] Go pointers preservation in JS.
 - [x] Context and Logger injection.
 - [x] Concurrent execution and script versioning.

@@ -1,5 +1,10 @@
 # CHANGELOG - go/js
 
+## v1.5.8 (2026-07-13)
+- **桥接一致性修复**: Go 函数返回的 API 门面对象，其导出方法也统一经由桥接层调用。
+  JavaScript 的 lower-camel 对象字段会与顶层 API 一样自动转换为 Go struct 字段。
+- **回归测试**: 覆盖 `table().Query({filter: [...]})` 形式的返回对象方法调用。
+
 ## v1.5.7 (2026-06-28)
 - **低代码 TS 文档对齐**:
   - `Doc()` 生成的模块入口改为顶层全局变量声明，如 `declare const api: Api_Module;`，不再使用 `declare const go: { ... }` 包裹。
