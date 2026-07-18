@@ -1,5 +1,8 @@
 # CHANGELOG - go/js
 
+## v1.5.9 (2026-07-18)
+- **依赖校验修复**: 重新整理模块 checksum，并对齐 `x/crypto v0.52.0`、`x/sys v0.45.0`。
+
 ## v1.5.8 (2026-07-13)
 - **桥接一致性修复**: Go 函数返回的 API 门面对象，其导出方法也统一经由桥接层调用。
   JavaScript 的 lower-camel 对象字段会与顶层 API 一样自动转换为 Go struct 字段。

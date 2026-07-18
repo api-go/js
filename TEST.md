@@ -1,5 +1,8 @@
 # Test Report - go/js
 
+## v1.5.9 验证
+- 独立模块解析、全量测试与基准测试均通过。
+
 ## Performance (Benchmark)
 Date: 2026-06-28
 OS: darwin
