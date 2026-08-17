@@ -89,11 +89,13 @@ func wrapGoFunc(vm *goja.Runtime, fn any, isUnsafe bool) goja.Value {
 			if isVariadic && i == numIn-1 {
 				elemType := argType.Elem()
 				for jsArgIdx < len(jsArgs) {
-					exported := jsArgs[jsArgIdx].Export()
+					jsValue := jsArgs[jsArgIdx]
+					exported := jsValue.Export()
 					expV := reflect.ValueOf(exported)
 					if !expV.IsValid() || !expV.Type().AssignableTo(elemType) {
 						elem := reflect.New(elemType).Elem()
 						cast.Convert(elem.Addr().Interface(), exported)
+						exportJSCallbacks(vm, jsValue, elem)
 						expV = elem
 					}
 					goArgs = append(goArgs, expV)
@@ -173,6 +175,50 @@ func wrapGoFunc(vm *goja.Runtime, fn any, isUnsafe bool) goja.Value {
 		}
 		return vm.ToValue(resSlice)
 	})
+}
+
+// exportJSCallbacks overlays callable fields after cast.Convert has applied the
+// project's lower-camel struct mapping. goja's native ExportTo preserves JS
+// functions, while cast remains authoritative for ordinary data conversion.
+func exportJSCallbacks(vm *goja.Runtime, source goja.Value, target reflect.Value) {
+	if source == nil {
+		return
+	}
+	for target.Kind() == reflect.Ptr {
+		if target.IsNil() {
+			if goja.IsUndefined(source) || goja.IsNull(source) {
+				return
+			}
+			target.Set(reflect.New(target.Type().Elem()))
+		}
+		target = target.Elem()
+	}
+	if target.Kind() != reflect.Struct || goja.IsUndefined(source) || goja.IsNull(source) {
+		return
+	}
+	object := source.ToObject(vm)
+	targetType := target.Type()
+	for i := 0; i < target.NumField(); i++ {
+		field := target.Field(i)
+		if !field.CanSet() {
+			continue
+		}
+		name := cast.GetLowerName(targetType.Field(i).Name)
+		value := object.Get(name)
+		if goja.IsUndefined(value) {
+			value = object.Get(targetType.Field(i).Name)
+		}
+		if value == nil || goja.IsUndefined(value) || goja.IsNull(value) {
+			continue
+		}
+		if field.Kind() == reflect.Func {
+			_ = vm.ExportTo(value, field.Addr().Interface())
+			continue
+		}
+		if field.Kind() == reflect.Struct || field.Kind() == reflect.Ptr {
+			exportJSCallbacks(vm, value, field)
+		}
+	}
 }
 
 // toJSValue exposes Go API objects through bridge-wrapped methods rather than

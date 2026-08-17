@@ -24,6 +24,15 @@ type bridgeFacadeRequest struct {
 	Limit  int
 }
 
+type bridgeCallbackGroup struct {
+	OnData func([]byte) error
+}
+
+type bridgeCallbackOptions struct {
+	Token  string
+	Stream *bridgeCallbackGroup
+}
+
 // bridgeFacade intentionally follows the shape used by Go APIs exposed to JS:
 // private state and exported methods.
 type bridgeFacade struct {
@@ -164,6 +173,26 @@ func TestBridgeVariadic(t *testing.T) {
 	}
 	if !strings.Contains(result, "key1") || !strings.Contains(result, "field1") || !strings.Contains(result, "val1") {
 		t.Errorf("Variadic args content wrong, got %v", result)
+	}
+}
+
+func TestBridgeVariadicNestedCallback(t *testing.T) {
+	vm := goja.New()
+	call := func(options ...*bridgeCallbackOptions) error {
+		if len(options) != 1 || options[0] == nil || options[0].Token != "internal" || options[0].Stream == nil || options[0].Stream.OnData == nil {
+			return fmt.Errorf("options were not converted: %#v", options)
+		}
+		return options[0].Stream.OnData([]byte("chunk"))
+	}
+	if err := vm.Set("call", wrapGoFunc(vm, call, false)); err != nil {
+		t.Fatal(err)
+	}
+	value, err := vm.RunString(`let received = ''; call({token: 'internal', stream: {onData(chunk) { received = String.fromCharCode(...chunk); return null }}}); received`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.String() != "chunk" {
+		t.Fatalf("callback received %q", value.String())
 	}
 }
 

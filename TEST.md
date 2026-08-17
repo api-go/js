@@ -1,7 +1,8 @@
 # Test Report - go/js
 
-## v1.5.9 验证
+## v1.5.10 验证
 - 独立模块解析、全量测试与基准测试均通过。
+- `TestBridgeVariadicNestedCallback` 验证可变 options 中 lower-camel 数据与嵌套 JavaScript 回调同时正确转换。
 
 ## Performance (Benchmark)
 Date: 2026-06-28

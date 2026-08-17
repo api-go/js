@@ -1,5 +1,7 @@
 apigo.cc/go/cast v1.5.3 h1:jk6VX0rGFhjKtfPhsaV6IKYpiGmORRk9qPTtuNS53tw=
 apigo.cc/go/cast v1.5.3/go.mod h1:GMjjrYn93tWat1U409G7h1jR3ejfLLI7r0efBo9Sbd4=
+apigo.cc/go/cast v1.5.5 h1:DMbfK3uPhPjRaXutj3StIZIkfjFIATSXfuAOeNOd4Fw=
+apigo.cc/go/cast v1.5.5/go.mod h1:GMjjrYn93tWat1U409G7h1jR3ejfLLI7r0efBo9Sbd4=
 apigo.cc/go/config v1.5.3 h1:peq1FM2xO+vzPHJf8Dwg3DXm8PtFQMfTFKQj6fpoG7A=
 apigo.cc/go/config v1.5.3/go.mod h1:ZiOAjWa1mQIzszaJZN+kO6YU4GXreng+NxkcK/TAkqQ=
 apigo.cc/go/encoding v1.5.5 h1:kduNLWQgtcQqHYobOuu1djbgg8LedkGOe8f18ZMfqzs=
@@ -12,6 +14,8 @@ apigo.cc/go/jsmod v1.5.3 h1:S3W317bH0QV2NMeRO1E0v6ySIBOfMWYv/NuQJbvqKWU=
 apigo.cc/go/jsmod v1.5.3/go.mod h1:bmyeZtOAP/j5am+YRnaiM89smysK24K7ebk0koFtsSw=
 apigo.cc/go/log v1.5.8 h1:/IYtGPWhRjT3OayylDIphkWZIQbpLjqVeSnFEiD3Dy0=
 apigo.cc/go/log v1.5.8/go.mod h1:HfFPANMYxJx197SSTXB21Pgxcz/gGqPP8nlSErgd5WE=
+apigo.cc/go/log v1.5.9 h1:g8JehZrpVJyesesv+JFig5szEELsO4UjShsjlEihCfc=
+apigo.cc/go/log v1.5.9/go.mod h1:b4f/UB5Kk7oiFtkXvG4GVilmHGygWgxELRAdEZrIyfs=
 apigo.cc/go/rand v1.5.3 h1:O4bPIwyaOWEBCr0nL9A4G4qG48AqiGTCzfPeckm3Ius=
 apigo.cc/go/rand v1.5.3/go.mod h1:q1BTFkY/cXE229dDD5Q22lF7T0DoKPV6xAu+6bCrDH4=
 apigo.cc/go/safe v1.5.2 h1:EnuEOW/SGwf/5A0nw9LnqfKJE071+TIc6ez8HI9R9Lg=

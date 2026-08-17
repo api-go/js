@@ -11,6 +11,7 @@ A lightweight, frictionless, and AI-friendly JavaScript engine for Go applicatio
 - **Versioned Pool**: Thread-safe VM pool with incremental code synchronization and version checking (`CheckVersion`).
 - **Function Discovery**: List all defined functions via `FuncList()`.
 - **Context Interruption**: Safe execution with `context.Context` cancellation support.
+- **Nested Callback Bridging**: JavaScript callbacks inside lower-camel option objects are preserved when converted to Go structs, including variadic streaming options.
 - **AI-Ready**: Generates TypeScript definitions (`.d.ts`) for AI to understand available capabilities.
 
 ## Usage
