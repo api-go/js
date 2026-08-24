@@ -1,19 +1,23 @@
 # Test Report - go/js
 
+## v1.5.11 验证
+- 独立模块解析、全量测试与基准测试均通过。
+- `TestDefineValidation` 覆盖语法错误、定义阶段异常、非函数结果、定义超时，以及失败定义不改变共享注册表。
+
 ## v1.5.10 验证
 - 独立模块解析、全量测试与基准测试均通过。
 - `TestBridgeVariadicNestedCallback` 验证可变 options 中 lower-camel 数据与嵌套 JavaScript 回调同时正确转换。
 
 ## Performance (Benchmark)
-Date: 2026-06-28
+Date: 2026-08-24
 OS: darwin
-Arch: amd64
-CPU: Intel(R) Core(TM) i9-9980HK CPU @ 2.40GHz
+Arch: arm64
+CPU: Apple M3 Max
 
 | Benchmark | Iterations | Time/op |
 |-----------|------------|---------|
-| BenchmarkCall | 766462 | 1331 ns/op |
-| BenchmarkSync | 31066 | 52789 ns/op |
+| BenchmarkCall | 1578303 | 742.8 ns/op |
+| BenchmarkSync | 13456 | 136636 ns/op |
 
 *Note: BenchmarkCall covers the hot path of executing a JS function from the pool. BenchmarkSync covers the cost of defining new code (including VM sync).*
 
@@ -66,6 +70,7 @@ ok      apigo.cc/go/js  0.800s
 - [x] Context and Logger injection.
 - [x] Concurrent execution and script versioning.
 - [x] Script version checking (`CheckVersion`).
+- [x] Transactional definition validation and shared Pool fault isolation.
 - [x] Function discovery (`FuncList`).
 - [x] Context cancellation interruption.
 - [x] Graceful shutdown.

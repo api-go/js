@@ -161,6 +161,35 @@ func TestDefineValidation(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error for arrow function: %v", err)
 	}
+
+	// Invalid JavaScript must not enter the shared registry or poison VMs.
+	version := p.version
+	err = p.Define("badSyntax", `({ args }) => { return args })`, 0)
+	if err == nil || !strings.Contains(err.Error(), "invalid JavaScript") {
+		t.Fatalf("expected syntax validation error, got %v", err)
+	}
+	if p.version != version || p.CheckVersion("badSyntax", 0) {
+		t.Fatal("invalid JavaScript changed the shared script registry")
+	}
+	err = p.Define("throwsWhileDefining", `(() => { throw new Error("definition failed") })()`, 0)
+	if err == nil || !strings.Contains(err.Error(), "definition failed") {
+		t.Fatalf("expected definition error, got %v", err)
+	}
+	err = p.Define("notAFunction", `({ value: 1 })`, 0)
+	if err == nil || !strings.Contains(err.Error(), "must evaluate to a function") {
+		t.Fatalf("expected function validation error, got %v", err)
+	}
+	err = p.Define("neverFinishes", `(() => { for (;;) {} })()`, 0)
+	if err == nil || !strings.Contains(err.Error(), "definition validation timed out") {
+		t.Fatalf("expected definition timeout, got %v", err)
+	}
+	if p.version != version || p.CheckVersion("throwsWhileDefining", 0) || p.CheckVersion("notAFunction", 0) || p.CheckVersion("neverFinishes", 0) {
+		t.Fatal("failed definitions changed the shared script registry")
+	}
+	result, callErr := p.Call("good2", 0, nil, 2, 3)
+	if callErr != nil || cast.To[int64](result) != 5 {
+		t.Fatalf("valid function failed after rejected script: result=%v error=%v", result, callErr)
+	}
 }
 
 func TestJSErrorStackTrace(t *testing.T) {

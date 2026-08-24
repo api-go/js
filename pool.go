@@ -127,7 +127,21 @@ func (p *Pool) Define(name string, code string, version int64) error {
 		return err
 	}
 
-	wrapped := fmt.Sprintf("globalThis['%s'] = (%s);", name, code)
+	wrapped := fmt.Sprintf("globalThis[%q] = (%s);", name, code)
+	program, err := goja.Compile(name, wrapped, false)
+	if err != nil {
+		return fmt.Errorf("js.Define [%s]: invalid JavaScript: %w", name, err)
+	}
+	validationVM := goja.New()
+	validationTimer := time.AfterFunc(time.Second, func() { validationVM.Interrupt("definition validation timed out") })
+	if _, err = validationVM.RunProgram(program); err != nil {
+		validationTimer.Stop()
+		return fmt.Errorf("js.Define [%s]: definition failed: %w", name, err)
+	}
+	validationTimer.Stop()
+	if _, ok := goja.AssertFunction(validationVM.Get(name)); !ok {
+		return fmt.Errorf("js.Define [%s]: code must evaluate to a function", name)
+	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -164,8 +178,9 @@ func CheckVersion(name string, version int64) bool {
 
 // parseJSFrame parses a single stack trace line from Goja.
 // Format is:
-//   named:   \tat funcName (src:line:col) (optionalPC)
-//   anon:    \tat src:line:col (optionalPC)
+//
+//	named:   \tat funcName (src:line:col) (optionalPC)
+//	anon:    \tat src:line:col (optionalPC)
 func parseJSFrame(line string) (src, lineNum, col string, ok bool) {
 	if !strings.HasPrefix(line, "\t") {
 		return "", "", "", false

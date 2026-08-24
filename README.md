@@ -9,6 +9,7 @@ A lightweight, frictionless, and AI-friendly JavaScript engine for Go applicatio
 - **Host Object Fidelity**: Go pointers and structs are preserved when passed back and forth between Go and JS.
 - **Context Injection**: Automatic `context.Context` propagation from `js.Call`.
 - **Versioned Pool**: Thread-safe VM pool with incremental code synchronization and version checking (`CheckVersion`).
+- **Transactional Definitions**: `Define` validates each function in an isolated VM before publishing it, so an invalid low-code script cannot poison the shared VM pool.
 - **Function Discovery**: List all defined functions via `FuncList()`.
 - **Context Interruption**: Safe execution with `context.Context` cancellation support.
 - **Nested Callback Bridging**: JavaScript callbacks inside lower-camel option objects are preserved when converted to Go structs, including variadic streaming options.
@@ -44,6 +45,8 @@ func main() {
     res, err := js.Call("myTask", time.Second, nil, "star")
 }
 ```
+
+`Define` accepts an anonymous function expression. Before registration it rejects syntax errors, definition-time exceptions, non-function results, and definitions that do not finish within one second. Rejected definitions do not change the Pool version or become visible to any runtime VM.
 
 ### 3. Discover Functions
 
