@@ -3,17 +3,17 @@ module apigo.cc/go/js
 go 1.25.0
 
 require (
-	apigo.cc/go/cast v1.5.6
+	apigo.cc/go/cast v1.5.7
 	apigo.cc/go/jsmod v1.5.4
-	apigo.cc/go/log v1.5.13
+	apigo.cc/go/log v1.5.14
 	github.com/dop251/goja v0.0.0-20260311135729-065cd970411c
 )
 
 require (
-	apigo.cc/go/config v1.5.6 // indirect
-	apigo.cc/go/encoding v1.5.7 // indirect
-	apigo.cc/go/file v1.5.8 // indirect
-	apigo.cc/go/id v1.5.8 // indirect
+	apigo.cc/go/config v1.5.7 // indirect
+	apigo.cc/go/encoding v1.5.8 // indirect
+	apigo.cc/go/file v1.5.9 // indirect
+	apigo.cc/go/id v1.5.9 // indirect
 	apigo.cc/go/rand v1.5.4 // indirect
 	apigo.cc/go/safe v1.5.4 // indirect
 	apigo.cc/go/shell v1.5.7 // indirect
