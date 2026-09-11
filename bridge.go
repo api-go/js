@@ -110,11 +110,16 @@ func wrapGoFunc(vm *goja.Runtime, fn any, isUnsafe bool) goja.Value {
 				jsVal := jsArgs[jsArgIdx]
 				exported := jsVal.Export()
 
-				expV := reflect.ValueOf(exported)
-				if expV.IsValid() && expV.Type().AssignableTo(argType) {
-					goArg.Set(expV)
-				} else {
-					cast.Convert(goArg.Addr().Interface(), exported)
+				// null/undefined export as nil. The freshly allocated Go argument
+				// already contains the correct zero value; passing nil into the
+				// generic reflector can attempt to Set an invalid reflect.Value.
+				if exported != nil && !goja.IsNull(jsVal) && !goja.IsUndefined(jsVal) {
+					expV := reflect.ValueOf(exported)
+					if expV.IsValid() && expV.Type().AssignableTo(argType) {
+						goArg.Set(expV)
+					} else {
+						cast.Convert(goArg.Addr().Interface(), exported)
+					}
 				}
 				jsArgIdx++
 			}

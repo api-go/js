@@ -43,6 +43,7 @@ func main() {
     }
 
     res, err := js.Call("myTask", time.Second, nil, "star")
+    // 需要传播调用方取消时使用 js.CallContext(ctx, ...)
 }
 ```
 

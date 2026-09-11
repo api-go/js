@@ -196,6 +196,21 @@ func TestBridgeVariadicNestedCallback(t *testing.T) {
 	}
 }
 
+func TestBridgeNullArgumentUsesGoZeroValue(t *testing.T) {
+	vm := goja.New()
+	call := func(payload any, optional *string) bool { return payload == nil && optional == nil }
+	if err := vm.Set("call", wrapGoFunc(vm, call, false)); err != nil {
+		t.Fatal(err)
+	}
+	value, err := vm.RunString(`call(null, undefined)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !value.ToBoolean() {
+		t.Fatal("null and undefined were not converted to Go zero values")
+	}
+}
+
 func TestBridgeMapsLowerCamelCaseForReturnedObjectMethods(t *testing.T) {
 	vm := goja.New()
 	facade := &bridgeFacade{}

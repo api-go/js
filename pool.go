@@ -41,6 +41,7 @@ type Pool struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 	closed int32
+	callMu sync.RWMutex
 }
 
 // NewPool creates a new isolated JS execution environment.
@@ -341,16 +342,23 @@ func buildExceptionError(funcName string, exc *goja.Exception) *Error {
 // Call executes a JS function from the pool.
 // On error, returns *Error with merged JS + Go call stacks.
 func (p *Pool) Call(funcName string, timeout time.Duration, injects map[string]any, args ...any) (any, *Error) {
+	return p.CallContext(context.Background(), funcName, timeout, injects, args...)
+}
+
+// CallContext executes a JS function and cancels it when either the caller or
+// the pool is stopping.
+func (p *Pool) CallContext(parent context.Context, funcName string, timeout time.Duration, injects map[string]any, args ...any) (any, *Error) {
+	p.callMu.RLock()
 	if atomic.LoadInt32(&p.closed) == 1 {
+		p.callMu.RUnlock()
 		return nil, &Error{Message: "js.Pool: pool is closed"}
 	}
+	p.wg.Add(1)
+	p.callMu.RUnlock()
+	defer p.wg.Done()
 
 	instance := p.pool.Get().(*vmInstance)
 	defer p.pool.Put(instance)
-
-	// Tracking active calls for graceful shutdown
-	p.wg.Add(1)
-	defer p.wg.Done()
 
 	vm := instance.runtime
 	vm.ClearInterrupt()
@@ -375,7 +383,14 @@ func (p *Pool) Call(funcName string, timeout time.Duration, injects map[string]a
 	}
 
 	// 2. Prepare Context
-	execCtx := jsmod.NewContext(p.ctx, injects)
+	if parent == nil {
+		parent = context.Background()
+	}
+	callCtx, cancelCall := context.WithCancel(parent)
+	stopPoolCancel := context.AfterFunc(p.ctx, cancelCall)
+	defer stopPoolCancel()
+	defer cancelCall()
+	execCtx := jsmod.NewContext(callCtx, injects)
 	var cancel context.CancelFunc
 	if timeout > 0 {
 		execCtx, cancel = context.WithTimeout(execCtx, timeout)
@@ -387,8 +402,13 @@ func (p *Pool) Call(funcName string, timeout time.Duration, injects map[string]a
 
 	// 4. Set up interruption
 	stopInterrupter := make(chan struct{})
-	defer close(stopInterrupter)
+	interrupterDone := make(chan struct{})
+	defer func() {
+		close(stopInterrupter)
+		<-interrupterDone
+	}()
 	go func() {
+		defer close(interrupterDone)
 		select {
 		case <-execCtx.Done():
 			reason := "execution timeout/canceled"
@@ -446,9 +466,15 @@ func Call(funcName string, timeout time.Duration, injects map[string]any, args .
 	return DefaultPool.Call(funcName, timeout, injects, args...)
 }
 
+func CallContext(ctx context.Context, funcName string, timeout time.Duration, injects map[string]any, args ...any) (any, *Error) {
+	return DefaultPool.CallContext(ctx, funcName, timeout, injects, args...)
+}
+
 // --- Starter Interface Implementation ---
 
 func (p *Pool) Start(ctx context.Context, logger *log.Logger) error {
+	p.callMu.Lock()
+	defer p.callMu.Unlock()
 	if p.ctx.Err() != nil {
 		p.ctx, p.cancel = context.WithCancel(context.Background())
 	}
@@ -457,8 +483,10 @@ func (p *Pool) Start(ctx context.Context, logger *log.Logger) error {
 }
 
 func (p *Pool) Stop(ctx context.Context) error {
+	p.callMu.Lock()
 	atomic.StoreInt32(&p.closed, 1)
 	p.cancel()
+	p.callMu.Unlock()
 
 	done := make(chan struct{})
 	go func() {

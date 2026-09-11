@@ -1,5 +1,10 @@
 # Test Report - go/js
 
+## v1.5.15 验证
+- 验证 Context 取消、Pool 停止与复用 VM 中断清理。
+- 验证 `null`/`undefined` 参数安全转换为 Go 零值。
+- `go test -v ./...` 与 `go test -bench=. ./...` 通过。
+
 ## v1.5.13 验证
 - 独立模块解析、全量测试与基准测试均通过。
 - `TestDefineValidation` 覆盖语法错误、定义阶段异常、非函数结果、定义超时，以及失败定义不改变共享注册表。

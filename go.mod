@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	apigo.cc/go/cast v1.5.7
 	apigo.cc/go/jsmod v1.5.4
-	apigo.cc/go/log v1.5.14
+	apigo.cc/go/log v1.5.15
 	github.com/dop251/goja v0.0.0-20260311135729-065cd970411c
 )
 

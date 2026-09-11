@@ -113,6 +113,44 @@ func TestPoolGracefulShutdown(t *testing.T) {
 	}
 }
 
+func TestPoolCallContextCancellation(t *testing.T) {
+	p := NewPool()
+	if err := p.Define("busy", `() => { while (true) {} }`, 0); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan *Error, 1)
+	go func() {
+		_, callErr := p.CallContext(ctx, "busy", 0, nil)
+		done <- callErr
+	}()
+	cancel()
+	callErr := <-done
+	if callErr == nil || !strings.Contains(callErr.Error(), "execution timeout/canceled") {
+		t.Fatalf("CallContext error = %v, want cancellation", callErr)
+	}
+}
+
+func TestPoolCanceledCallDoesNotInterruptReusedVM(t *testing.T) {
+	pool := NewPool()
+	t.Cleanup(func() { _ = pool.Stop(context.Background()) })
+	if err := pool.Define("spin", `(milliseconds) => { const end = Date.now() + milliseconds; while (Date.now() < end) {} return "done" }`, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, callErr := pool.CallContext(ctx, "spin", time.Second, nil, 1); callErr == nil {
+		t.Fatal("expected canceled call to fail")
+	}
+	for attempt := 0; attempt < 100; attempt++ {
+		result, callErr := pool.Call("spin", time.Second, nil, 1)
+		if callErr != nil || result != "done" {
+			t.Fatalf("reused VM was interrupted on attempt %d: result=%#v error=%v", attempt, result, callErr)
+		}
+	}
+}
+
 func TestGlobalInjection(t *testing.T) {
 	p := NewPool()
 	// Test if 'cast' module is available globally without 'go.' prefix

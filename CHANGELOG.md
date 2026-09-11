@@ -1,5 +1,9 @@
 # CHANGELOG - go/js
 
+## v1.5.15 (2026-09-12)
+- **调用取消**: 新增 `Pool.CallContext` 与包级 `CallContext`，调用方取消或 Pool 停止时可靠中断 JavaScript，并避免复用 VM 残留中断信号。
+- **桥接修复**: JavaScript `null` 与 `undefined` 参数安全映射为 Go 零值。
+
 ## v1.5.13 (2026-09-05)
 - **依赖对齐**: 升级 `config`、`file` 与 `log` 至当前已发布版本。
 
