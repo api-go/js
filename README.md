@@ -99,3 +99,7 @@ knowbase.Table("Account").Query({
   limit: 1000
 })
 ```
+
+## v1.5.16 依赖基线
+
+本版本对齐 Log v1.5.17 与发布时模块索引中的上游已发布依赖；公开 API 保持兼容。

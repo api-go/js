@@ -84,3 +84,13 @@ ok      apigo.cc/go/js  0.800s
 - [x] Opaque type naming stability (`GoContext`, `GoTime`, `GoURL`).
 - [x] Runtime-injected `Logger` type hints with JS-safe methods only.
 - [x] JS VM call stack parsing & Go dynamic call stack restoration with `jsmod.MakeError`.
+
+## v1.5.16 发布验证（2026-10-10）
+
+- GOWORK=off go test -v ./... 与 go test -bench=. ./... 通过，依赖均为已发布 tag。
+- API 以 GOWORK=off go doc 与导出源码交叉核对（getExports 工具不可用）。
+
+```text
+BenchmarkCall-16    	  794570	      1492 ns/op
+BenchmarkSync-16    	   15024	    102030 ns/op
+```
