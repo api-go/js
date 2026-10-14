@@ -1,5 +1,8 @@
 # Test Report - go/js
 
+## v1.5.17 验证（2026-10-15）
+- `TestDefinitionDoesNotConfuseTextWithNamedFunctions` checks literal/comment/template/regexp acceptance, real nested/named rejection and registry preservation.
+
 ## v1.5.15 验证
 - 验证 Context 取消、Pool 停止与复用 VM 中断清理。
 - 验证 `null`/`undefined` 参数安全转换为 Go 零值。
@@ -93,4 +96,11 @@ ok      apigo.cc/go/js  0.800s
 ```text
 BenchmarkCall-16    	  794570	      1492 ns/op
 BenchmarkSync-16    	   15024	    102030 ns/op
+```
+
+发布验证：GOWORK=off 全量测试与基准通过；getExports 不可用，以 go doc 和导出源码核对 API。
+
+```text
+BenchmarkCall-16    	  748552	      1545 ns/op
+BenchmarkSync-16    	   12255	    143881 ns/op
 ```

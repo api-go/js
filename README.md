@@ -49,6 +49,8 @@ func main() {
 
 `Define` accepts an anonymous function expression. Before registration it rejects syntax errors, definition-time exceptions, non-function results, and definitions that do not finish within one second. Rejected definitions do not change the Pool version or become visible to any runtime VM.
 
+Named functions are checked in the parsed AST, including nested functions; matching text in strings, comments, templates and regular expressions remains valid.
+
 ### 3. Discover Functions
 
 ```go
@@ -100,6 +102,6 @@ knowbase.Table("Account").Query({
 })
 ```
 
-## v1.5.16 依赖基线
+## v1.5.17 依赖基线
 
 本版本对齐 Log v1.5.17 与发布时模块索引中的上游已发布依赖；公开 API 保持兼容。

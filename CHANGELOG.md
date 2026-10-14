@@ -1,5 +1,8 @@
 # CHANGELOG - go/js
 
+## [v1.5.17] - 2026-10-15
+- Validate named functions from parsed syntax rather than source-text matching, preserving valid strings/comments/templates/regex and the nested-function restriction.
+
 ## [v1.5.16] - 2026-10-10
 - 对齐 Log v1.5.17 及当前已发布的上游依赖。
 

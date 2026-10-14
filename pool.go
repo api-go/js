@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -14,6 +13,8 @@ import (
 	"apigo.cc/go/jsmod"
 	"apigo.cc/go/log"
 	"github.com/dop251/goja"
+	"github.com/dop251/goja/ast"
+	"github.com/dop251/goja/parser"
 )
 
 type scriptEntry struct {
@@ -103,13 +104,49 @@ func (e *Error) Error() string { return e.Message }
 
 // --- Validation ---
 
-var namedFuncRe = regexp.MustCompile(`\bfunction\s+[a-zA-Z$_]`)
+// Walk parsed nodes only; literals, comments and regexp text are not code.
+func hasNamedFunction(value reflect.Value) bool {
+	if !value.IsValid() {
+		return false
+	}
+	if value.Kind() == reflect.Interface || value.Kind() == reflect.Pointer {
+		if value.IsNil() {
+			return false
+		}
+		if value.CanInterface() {
+			if fn, ok := value.Interface().(*ast.FunctionLiteral); ok && fn.Name != nil {
+				return true
+			}
+		}
+		return hasNamedFunction(value.Elem())
+	}
+	if value.Kind() == reflect.Slice {
+		for i := 0; i < value.Len(); i++ {
+			if hasNamedFunction(value.Index(i)) {
+				return true
+			}
+		}
+		return false
+	}
+	if value.Kind() == reflect.Struct && value.Type().PkgPath() == reflect.TypeOf(ast.Program{}).PkgPath() {
+		for i := 0; i < value.NumField(); i++ {
+			if value.Type().Field(i).PkgPath == "" && hasNamedFunction(value.Field(i)) {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 func validateCode(name, code string) error {
 	if strings.TrimSpace(code) == "" {
 		return fmt.Errorf("js.Define [%s]: code must not be empty", name)
 	}
-	if namedFuncRe.MatchString(code) {
+	program, err := parser.ParseFile(nil, name, "("+code+"\n);", 0)
+	if err != nil {
+		return fmt.Errorf("js.Define [%s]: invalid JavaScript: %w", name, err)
+	}
+	if hasNamedFunction(reflect.ValueOf(program)) {
 		return fmt.Errorf("js.Define [%s]: named function declarations are not allowed, use an anonymous function expression", name)
 	}
 	return nil
