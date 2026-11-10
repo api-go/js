@@ -8,9 +8,9 @@ import (
 	"runtime"
 	"strings"
 
-	"apigo.cc/go/cast"
-	"apigo.cc/go/jsmod"
-	"apigo.cc/go/log"
+	"github.com/api-go/cast"
+	"github.com/api-go/jsmod"
+	"github.com/api-go/log"
 	"github.com/dop251/goja"
 )
 
@@ -326,10 +326,10 @@ func isNoiseFrame(line string) bool {
 	if strings.Contains(trimmed, "github.com/dop251/goja") {
 		return true
 	}
-	if strings.Contains(trimmed, "apigo.cc/go/js.wrapGoFunc") {
+	if strings.Contains(trimmed, "github.com/api-go/js.wrapGoFunc") {
 		return true
 	}
-	if strings.Contains(trimmed, "apigo.cc/go/js.(*Pool)") {
+	if strings.Contains(trimmed, "github.com/api-go/js.(*Pool)") {
 		return true
 	}
 	if strings.Contains(trimmed, "reflect.Value") {

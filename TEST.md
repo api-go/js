@@ -68,7 +68,7 @@ CPU: Apple M3 Max
 === RUN   TestDefineRedefine
 --- PASS: TestDefineRedefine (0.00s)
 PASS
-ok      apigo.cc/go/js  0.800s
+ok      github.com/api-go/js  0.800s
 ```
 
 ## Features Verified
@@ -104,3 +104,13 @@ BenchmarkSync-16    	   15024	    102030 ns/op
 BenchmarkCall-16    	  748552	      1545 ns/op
 BenchmarkSync-16    	   12255	    143881 ns/op
 ```
+
+## GitHub migration validation (pending release)
+
+Module paths and internal dependency versions are migrated. Development verification uses GOWORK=off and explicit sibling replacements; remove these replacements before release. See migration validation logs for actual results. Existing unrelated working changes are preserved and require separate review.
+
+API inventory verification: `GOWORK=off go doc` succeeded; output retained in the migration validation directory. Source exports were preserved by the path migration.
+
+## GitHub release verification
+
+GOWORK=off go test -v ./... and go test -bench=. ./... passed using published GitHub dependencies, without local replacements. go mod verify passed.

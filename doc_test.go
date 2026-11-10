@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"apigo.cc/go/jsmod"
+	"github.com/api-go/jsmod"
 )
 
 func TestDocGeneration(t *testing.T) {

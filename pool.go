@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"apigo.cc/go/jsmod"
-	"apigo.cc/go/log"
+	"github.com/api-go/jsmod"
+	"github.com/api-go/log"
 	"github.com/dop251/goja"
 	"github.com/dop251/goja/ast"
 	"github.com/dop251/goja/parser"
@@ -315,7 +315,7 @@ func buildExceptionError(funcName string, exc *goja.Exception) *Error {
 		if !ok {
 			continue
 		}
-		if src == "native" || strings.Contains(src, "apigo.cc/go/js.") || strings.Contains(src, "apigo.cc/go/js/") {
+		if src == "native" || strings.Contains(src, "github.com/api-go/js.") || strings.Contains(src, "github.com/api-go/js/") {
 			continue
 		}
 		jsFrames = append(jsFrames, fmt.Sprintf("%s:%s:%s", src, lineno, col))

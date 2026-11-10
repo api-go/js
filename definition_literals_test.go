@@ -1,7 +1,7 @@
 package js_test
 
 import (
-	"apigo.cc/go/js"
+	"github.com/api-go/js"
 	"testing"
 	"time"
 )

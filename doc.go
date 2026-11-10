@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"apigo.cc/go/jsmod"
+	"github.com/api-go/jsmod"
 )
 
 // Doc generates a comprehensive TypeScript definition (.d.ts) for the Go/JS environment.
@@ -239,7 +239,7 @@ func goTypeToTS(t reflect.Type, ctx *docCtx) string {
 	if pkgPath == "context" && rawName == "Context" {
 		return "GoContext"
 	}
-	if pkgPath == "apigo.cc/go/log" && rawName == "Logger" {
+	if pkgPath == "github.com/api-go/log" && rawName == "Logger" {
 		return "Logger"
 	}
 	if pkgPath == "net/http" && rawName == "Request" {
@@ -256,7 +256,7 @@ func goTypeToTS(t reflect.Type, ctx *docCtx) string {
 	}
 
 	// 4. Strict Penetration Blocking for named non-project types
-	isProject := strings.HasPrefix(pkgPath, "apigo.cc/go/")
+	isProject := strings.HasPrefix(pkgPath, "github.com/api-go/")
 	isAnonymous := rawName == ""
 
 	if pkgPath != "" && !isProject {
@@ -289,7 +289,7 @@ func registerInterface(t reflect.Type, ctx *docCtx) string {
 	pkgPath := t.PkgPath()
 
 	var name string
-	if strings.HasPrefix(pkgPath, "apigo.cc/go/") {
+	if strings.HasPrefix(pkgPath, "github.com/api-go/") {
 		parts := strings.Split(pkgPath, "/")
 		name = fmt.Sprintf("%s_%s", strings.Title(parts[len(parts)-1]), rawName)
 	} else if pkgPath != "" {

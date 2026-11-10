@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"apigo.cc/go/cast"
+	"github.com/api-go/cast"
 )
 
 func TestPoolVersioning(t *testing.T) {

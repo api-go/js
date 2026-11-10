@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"apigo.cc/go/jsmod"
+	"github.com/api-go/jsmod"
 )
 
 func dummyGoFunc() error {

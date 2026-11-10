@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"apigo.cc/go/cast"
-	"apigo.cc/go/jsmod"
-	"apigo.cc/go/log"
+	"github.com/api-go/cast"
+	"github.com/api-go/jsmod"
+	"github.com/api-go/log"
 	"github.com/dop251/goja"
 )
 

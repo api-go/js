@@ -4,7 +4,7 @@ A lightweight, frictionless, and AI-friendly JavaScript engine for Go applicatio
 
 ## Features
 
-- **Decoupled Architecture**: Capability providers only need to depend on `apigo.cc/go/jsmod`.
+- **Decoupled Architecture**: Capability providers only need to depend on `github.com/api-go/jsmod`.
 - **Frictionless Bridging**: Automatic type conversion using `go/cast`.
 - **Host Object Fidelity**: Go pointers and structs are preserved when passed back and forth between Go and JS.
 - **Context Injection**: Automatic `context.Context` propagation from `js.Call`.
@@ -20,7 +20,7 @@ A lightweight, frictionless, and AI-friendly JavaScript engine for Go applicatio
 ### 1. Register Go Capability (in any module)
 
 ```go
-import "apigo.cc/go/jsmod"
+import "github.com/api-go/jsmod"
 
 func init() {
     jsmod.Register("db", map[string]any{
@@ -34,7 +34,7 @@ func init() {
 ### 2. Execute JS with Version Checking
 
 ```go
-import "apigo.cc/go/js"
+import "github.com/api-go/js"
 
 func main() {
     // Check if script needs update (e.g., from file mtime)
