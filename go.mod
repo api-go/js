@@ -5,17 +5,17 @@ go 1.25.0
 require (
 	github.com/api-go/cast v1.5.9
 	github.com/api-go/jsmod v1.5.6
-	github.com/api-go/log v1.5.19
+	github.com/api-go/log v1.5.21
 	github.com/dop251/goja v0.0.0-20260311135729-065cd970411c
 )
 
 require (
-	github.com/api-go/config v1.5.9 // indirect
+	github.com/api-go/config v1.5.10 // indirect
 	github.com/api-go/encoding v1.5.9 // indirect
-	github.com/api-go/file v1.5.10 // indirect
+	github.com/api-go/file v1.5.11 // indirect
 	github.com/api-go/id v1.5.10 // indirect
 	github.com/api-go/rand v1.5.5 // indirect
-	github.com/api-go/safe v1.5.5 // indirect
+	github.com/api-go/safe v1.5.6 // indirect
 	github.com/api-go/shell v1.5.9 // indirect
 	github.com/api-go/timer v1.5.2 // indirect
 	github.com/dlclark/regexp2 v1.11.4 // indirect
